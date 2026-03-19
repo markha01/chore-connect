@@ -69,6 +69,25 @@ body {
   box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
 }
 
+/* Input overrides inside white cards */
+.card .input-dark,
+.card-sm .input-dark {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: #d5cfbf;
+  color: #1a1827;
+}
+
+.card .input-dark::placeholder,
+.card-sm .input-dark::placeholder {
+  color: #9b95aa;
+}
+
+.card .input-dark:focus,
+.card-sm .input-dark:focus {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
+}
+
 /* Button styles */
 .btn-primary {
   background: linear-gradient(135deg, #a855f7, #ec4899);
@@ -122,6 +141,20 @@ body {
   cursor: not-allowed;
 }
 
+/* Secondary button override inside white cards */
+.card .btn-secondary,
+.card-sm .btn-secondary {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: #d5cfbf;
+  color: #1a1827;
+}
+
+.card .btn-secondary:hover:not(:disabled),
+.card-sm .btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.09);
+  border-color: #bab5a8;
+}
+
 .btn-ghost {
   background: transparent;
   border: none;
@@ -138,19 +171,28 @@ body {
   color: var(--text-primary);
 }
 
-/* Card */
+/* Card — creamy white */
 .card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: #fdfcf8;
+  border: 1px solid #e8e3d8;
   border-radius: 16px;
   padding: 1.5rem;
+  /* Scope variables so children using var(--text-*) get dark colours */
+  --text-primary: #1a1827;
+  --text-muted: #6b6882;
+  --border: #d5cfbf;
+  color: #1a1827;
 }
 
 .card-sm {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: #fdfcf8;
+  border: 1px solid #e8e3d8;
   border-radius: 12px;
   padding: 1rem 1.25rem;
+  --text-primary: #1a1827;
+  --text-muted: #6b6882;
+  --border: #d5cfbf;
+  color: #1a1827;
 }
 
 /* Progress bar */
@@ -161,18 +203,17 @@ body {
   overflow: hidden;
 }
 
+/* Progress bar track inside white cards */
+.card .progress-bar,
+.card-sm .progress-bar {
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .progress-fill {
   border-radius: 100px;
   height: 100%;
   background: linear-gradient(90deg, #a855f7, #ec4899, #f59e0b);
-  background-size: 200% 100%;
-  animation: shimmer 3s linear infinite, progressFill 0.8s ease-out;
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes shimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
 }
 
 @keyframes progressFill {
@@ -215,6 +256,13 @@ body {
   color: #fca5a5;
   font-size: 0.85rem;
   padding: 0.625rem 0.875rem;
+}
+
+.card .msg-error,
+.card-sm .msg-error {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
 }
 
 .msg-success {

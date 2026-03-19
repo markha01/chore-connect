@@ -339,37 +339,62 @@ export default function DashboardPage() {
         {showInvite && (
           <div
             style={{
-              borderTop: '1px solid var(--border)',
-              background: 'rgba(10,10,18,0.95)',
-              padding: '1rem 1.25rem',
-              maxWidth: '700px',
-              margin: '0 auto',
+              borderTop: '1px solid #e8e3d8',
+              background: '#fdfcf8',
+              padding: '1rem 0',
+              animation: 'fadeIn 0.2s ease-out',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div
+              style={{
+                maxWidth: '700px',
+                margin: '0 auto',
+                padding: '0 1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                flexWrap: 'wrap',
+              }}
+            >
               <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Share this code with your housemates
+                <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#6b6882', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.3rem' }}>
+                  Invite code
                 </div>
                 <div
                   style={{
-                    fontSize: '1.5rem',
+                    fontSize: '1.6rem',
                     fontWeight: '800',
-                    letterSpacing: '0.2em',
+                    letterSpacing: '0.25em',
                     fontFamily: 'monospace',
                     background: 'linear-gradient(135deg, #a855f7, #14b8a6)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
+                    lineHeight: 1.2,
                   }}
                 >
                   {household?.inviteCode}
                 </div>
+                <div style={{ fontSize: '0.78rem', color: '#6b6882', marginTop: '0.25rem' }}>
+                  Share this with your housemates so they can join
+                </div>
               </div>
               <button
                 onClick={copyInviteCode}
-                className="btn-secondary"
-                style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                style={{
+                  background: copiedInvite ? 'rgba(20,184,166,0.12)' : 'rgba(168,85,247,0.1)',
+                  border: copiedInvite ? '1.5px solid rgba(20,184,166,0.4)' : '1.5px solid rgba(168,85,247,0.35)',
+                  borderRadius: '10px',
+                  color: copiedInvite ? '#0d7d72' : '#7c3aed',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  padding: '0.5rem 1.1rem',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
               >
                 {copiedInvite ? '✓ Copied!' : 'Copy code'}
               </button>
@@ -418,7 +443,7 @@ export default function DashboardPage() {
             </p>
           )}
           {progressPct === 100 && totalChores > 0 && (
-            <p style={{ color: '#5eead4', fontSize: '0.85rem', marginTop: '0.75rem', textAlign: 'center', fontWeight: '600' }}>
+            <p style={{ color: '#0d7d72', fontSize: '0.85rem', marginTop: '0.75rem', textAlign: 'center', fontWeight: '600' }}>
               🎉 All done — great work everyone!
             </p>
           )}
@@ -763,9 +788,9 @@ function ChoreCard({
             <span
               className="badge"
               style={{
-                background: 'rgba(245,158,11,0.12)',
-                color: '#fcd34d',
-                border: '1px solid rgba(245,158,11,0.2)',
+                background: 'rgba(180,83,9,0.08)',
+                color: '#92400e',
+                border: '1px solid rgba(180,83,9,0.2)',
               }}
             >
               Unassigned
@@ -799,7 +824,7 @@ function ChoreCard({
           )}
 
           {chore.is_complete && chore.completed_by_name && (
-            <span style={{ fontSize: '0.78rem', color: '#5eead4' }}>
+            <span style={{ fontSize: '0.78rem', color: '#0d7d72', fontWeight: '500' }}>
               ✓ Done by {chore.completed_by === currentUserId ? 'you' : chore.completed_by_name}
             </span>
           )}
