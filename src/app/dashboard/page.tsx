@@ -83,6 +83,16 @@ function formatGroupDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+function formatHistoryGroupDate(dateStr: string): string {
+  const today = getTodayStr();
+  if (dateStr === today) return 'Today';
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  if (dateStr === dateToStr(yesterdayDate)) return 'Yesterday';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
@@ -156,21 +166,30 @@ function DatePickerCalendar({
   const parsed = value ? value.split('-').map(Number) : null;
   const [viewYear, setViewYear] = useState(parsed ? parsed[0] : new Date().getFullYear());
   const [viewMonth, setViewMonth] = useState(parsed ? parsed[1] - 1 : new Date().getMonth());
+  const [pendingDate, setPendingDate] = useState(value || todayStr);
+  const [isClosing, setIsClosing] = useState(false);
 
   const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
-  // Things starts the week on Monday
   const DAY_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  // Offset so Monday = column 0: (Sun=0 → 6, Mon=1 → 0, … Sat=6 → 5)
   const firstDow = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const cells: (number | null)[] = [];
   for (let i = 0; i < firstDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
+
+  function triggerClose(confirm: boolean) {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      if (confirm) onChange(pendingDate);
+      onClose();
+    }, 180);
+  }
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -185,18 +204,26 @@ function DatePickerCalendar({
   function selectDay(d: number) {
     const m = String(viewMonth + 1).padStart(2, '0');
     const day = String(d).padStart(2, '0');
-    onChange(`${viewYear}-${m}-${day}`);
-    onClose();
+    setPendingDate(`${viewYear}-${m}-${day}`);
   }
 
-  const isValueToday = value === todayStr;
+  const isPendingToday = pendingDate === todayStr;
 
   return (
     <>
       {/* Backdrop */}
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)' }} />
+      <div
+        onClick={() => triggerClose(false)}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 200,
+          background: 'rgba(0,0,0,0.6)',
+          animation: isClosing ? 'backdropFadeOut 0.18s ease-in forwards' : 'backdropFade 0.15s ease',
+        }}
+      />
 
-      {/* Floating centered card — like Things */}
+      {/* Floating centered card */}
       <div style={{
         position: 'fixed',
         top: '50%',
@@ -208,6 +235,9 @@ function DatePickerCalendar({
         width: 'min(340px, calc(100vw - 2rem))',
         boxShadow: '0 24px 64px rgba(0,0,0,0.75)',
         overflow: 'hidden',
+        animation: isClosing
+          ? 'popOut 0.18s ease-in forwards'
+          : 'popIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}>
 
         {/* Header: "When?" centred + ✕ */}
@@ -215,7 +245,7 @@ function DatePickerCalendar({
           <span style={{ fontWeight: '700', fontSize: '1rem', color: '#f1f1f8' }}>When?</span>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => triggerClose(false)}
             style={{
               position: 'absolute',
               right: '1rem',
@@ -241,7 +271,12 @@ function DatePickerCalendar({
         {/* ⭐ Today quick row */}
         <button
           type="button"
-          onClick={() => { onChange(todayStr); onClose(); }}
+          onClick={() => {
+            setPendingDate(todayStr);
+            const now = new Date();
+            setViewYear(now.getFullYear());
+            setViewMonth(now.getMonth());
+          }}
           style={{
             width: '100%',
             display: 'flex',
@@ -263,7 +298,7 @@ function DatePickerCalendar({
         >
           <span style={{ fontSize: '1rem' }}>⭐</span>
           <span>Today</span>
-          {isValueToday && (
+          {isPendingToday && (
             <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>
           )}
         </button>
@@ -308,11 +343,12 @@ function DatePickerCalendar({
               if (d === null) return <div key={i} />;
               const cellStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               const isToday = cellStr === todayStr;
-              const isSelected = cellStr === value;
+              const isSelected = cellStr === pendingDate;
               return (
                 <button
                   key={i}
                   type="button"
+                  className="day-btn"
                   onClick={() => selectDay(d)}
                   style={{
                     width: '100%',
@@ -329,13 +365,12 @@ function DatePickerCalendar({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    transition: 'background 0.12s',
+                    transition: 'background 0.12s, transform 0.1s',
                     position: 'relative',
                   }}
                   onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(168,85,247,0.18)'; }}
                   onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
                 >
-                  {/* Today dot indicator (like Things' subtle marker) */}
                   {isToday && !isSelected && (
                     <span style={{ position: 'absolute', bottom: '3px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', borderRadius: '50%', background: '#a855f7' }} />
                   )}
@@ -346,11 +381,11 @@ function DatePickerCalendar({
           </div>
         </div>
 
-        {/* Footer: Jump to today — pink pill like Things' "Clear" */}
+        {/* Footer: Done */}
         <div style={{ padding: '0.5rem 0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
           <button
             type="button"
-            onClick={() => { onChange(todayStr); onClose(); }}
+            onClick={() => triggerClose(true)}
             style={{
               width: '100%',
               padding: '0.8rem',
@@ -362,9 +397,12 @@ function DatePickerCalendar({
               fontSize: '0.95rem',
               fontWeight: '700',
               letterSpacing: '0.01em',
+              transition: 'opacity 0.15s, transform 0.12s',
             }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >
-            Jump to today
+            Done
           </button>
         </div>
       </div>
@@ -420,7 +458,7 @@ export default function DashboardPage() {
   const [activeView, setActiveView] = useState<'chores' | 'bulletin' | 'settings'>('chores');
 
   // Chores tab
-  const [activeTab, setActiveTab] = useState<'today' | 'upcoming'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'history'>('today');
 
   // Add chore form
   const [showAddForm, setShowAddForm] = useState(false);
@@ -433,7 +471,12 @@ export default function DashboardPage() {
   const [adding, setAdding] = useState(false);
   const [newFrequency, setNewFrequency] = useState<'once' | 'daily' | 'every-other-day' | 'weekly' | 'every-other-week' | 'monthly'>('once');
   const [showAssignPicker, setShowAssignPicker] = useState(false);
+  const [isClosingAssignPicker, setIsClosingAssignPicker] = useState(false);
   const [pendingAssigned, setPendingAssigned] = useState<number | ''>('');
+
+  // History tab
+  const [historyPopupChore, setHistoryPopupChore] = useState<Chore | null>(null);
+  const [isClosingHistory, setIsClosingHistory] = useState(false);
 
   // Settings
   const [copiedInvite, setCopiedInvite] = useState(false);
@@ -606,6 +649,13 @@ export default function DashboardPage() {
     } catch { /* silent */ }
   }
 
+  async function handleDeleteNoConfirm(choreId: number) {
+    try {
+      await fetch(`/api/chores/${choreId}`, { method: 'DELETE' });
+      await fetchAll();
+    } catch { /* silent */ }
+  }
+
   function copyInviteCode() {
     if (!household) return;
     navigator.clipboard.writeText(household.inviteCode).then(() => {
@@ -669,7 +719,7 @@ export default function DashboardPage() {
 
   const todayStr = getTodayStr();
   const todayChores = chores.filter(c => !c.due_date || c.due_date <= todayStr);
-  const upcomingChores = chores.filter(c => c.due_date && c.due_date > todayStr);
+  const upcomingChores = chores.filter(c => c.due_date && c.due_date > todayStr && !c.is_complete);
   const pendingTodayChores = todayChores.filter(c => !c.is_complete);
   const doneTodayChores = todayChores.filter(c => c.is_complete);
   const totalToday = todayChores.length;
@@ -688,6 +738,19 @@ export default function DashboardPage() {
       .map(([dateStr, chorelist]) => ({ dateStr, chores: chorelist }));
   })();
 
+  const historyChores = chores.filter(c => c.is_complete);
+  const historyGroups: { dateStr: string; chores: Chore[] }[] = (() => {
+    const map = new Map<string, Chore[]>();
+    historyChores.forEach(c => {
+      const key = c.completed_at ? c.completed_at.slice(0, 10) : (c.due_date ?? c.created_at.slice(0, 10));
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    });
+    return Array.from(map.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([dateStr, chorelist]) => ({ dateStr, chores: chorelist }));
+  })();
+
   const memberStats = household?.members.map((m, i) => {
     const assigned = chores.filter(c => c.assigned_to === m.user_id);
     const done = assigned.filter(c => c.is_complete);
@@ -697,6 +760,16 @@ export default function DashboardPage() {
   function getMemberColorIndex(userId: number): number {
     const idx = household?.members.findIndex(m => m.user_id === userId) ?? -1;
     return idx >= 0 ? idx : 0;
+  }
+
+  function closeAssignPicker() {
+    setIsClosingAssignPicker(true);
+    setTimeout(() => { setShowAssignPicker(false); setIsClosingAssignPicker(false); }, 200);
+  }
+
+  function closeHistoryPopup() {
+    setIsClosingHistory(true);
+    setTimeout(() => { setHistoryPopupChore(null); setIsClosingHistory(false); }, 200);
   }
 
   // ── Loading / error states ─────────────────────────────────────────────────
@@ -750,9 +823,8 @@ export default function DashboardPage() {
           gap: '0.5rem',
         }}
       >
-        <span style={{ fontSize: '1.1rem' }}>🏠</span>
-        <span style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-          {household?.name ?? 'My Household'}
+        <span key={activeView} style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)', animation: 'headerTitleIn 0.2s ease', flex: 1, textAlign: 'center' }}>
+          {{ chores: 'Chores', bulletin: 'Messages', settings: 'Settings' }[activeView]}
         </span>
       </header>
 
@@ -763,6 +835,7 @@ export default function DashboardPage() {
             maxWidth: '700px',
             margin: '0 auto',
             padding: `1rem 1.25rem calc(${NAV_H}px + 1.5rem)`,
+            animation: 'viewFadeIn 0.22s ease',
           }}
         >
           {/* Tabs + Add chore — very top */}
@@ -785,9 +858,10 @@ export default function DashboardPage() {
                 padding: '3px',
               }}
             >
-              {(['today', 'upcoming'] as const).map(tab => {
-                const count = tab === 'today' ? todayChores.length : upcomingChores.length;
+              {(['today', 'upcoming', 'history'] as const).map(tab => {
+                const count = tab === 'today' ? todayChores.length : tab === 'upcoming' ? upcomingChores.length : historyChores.length;
                 const isActive = activeTab === tab;
+                const label = tab === 'today' ? 'Today' : tab === 'upcoming' ? 'Upcoming' : 'History';
                 return (
                   <button
                     key={tab}
@@ -798,23 +872,23 @@ export default function DashboardPage() {
                       borderRadius: '7px',
                       color: isActive ? 'white' : 'var(--text-muted)',
                       cursor: 'pointer',
-                      fontSize: '0.85rem',
+                      fontSize: '0.82rem',
                       fontWeight: isActive ? '700' : '500',
-                      padding: '0.375rem 0.875rem',
+                      padding: '0.375rem 0.625rem',
                       transition: 'all 0.2s',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.375rem',
+                      gap: '0.3rem',
                     }}
                   >
-                    {tab === 'today' ? 'Today' : 'Upcoming'}
+                    {label}
                     <span
                       style={{
                         background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
                         borderRadius: '100px',
-                        fontSize: '0.7rem',
+                        fontSize: '0.68rem',
                         fontWeight: '700',
-                        padding: '0.05rem 0.4rem',
+                        padding: '0.05rem 0.35rem',
                         lineHeight: '1.6',
                       }}
                     >
@@ -825,23 +899,25 @@ export default function DashboardPage() {
               })}
             </div>
 
-            <button
-              onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
-              style={{
-                background: showAddForm ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #a855f7, #ec4899)',
-                border: showAddForm ? '1px solid var(--border)' : 'none',
-                borderRadius: '8px',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                padding: '0.4rem 0.875rem',
-                transition: 'opacity 0.2s',
-                flexShrink: 0,
-              }}
-            >
-              {showAddForm ? '✕ Cancel' : '+ Add chore'}
-            </button>
+            {activeTab !== 'history' && (
+              <button
+                onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
+                style={{
+                  background: showAddForm ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #a855f7, #ec4899)',
+                  border: showAddForm ? '1px solid var(--border)' : 'none',
+                  borderRadius: '8px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  padding: '0.4rem 0.875rem',
+                  transition: 'opacity 0.2s',
+                  flexShrink: 0,
+                }}
+              >
+                {showAddForm ? '✕ Cancel' : '+ Add chore'}
+              </button>
+            )}
           </div>
 
           {/* Add chore form */}
@@ -1000,8 +1076,11 @@ export default function DashboardPage() {
                     <>
                       {/* Backdrop */}
                       <div
-                        onClick={() => setShowAssignPicker(false)}
-                        style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)' }}
+                        onClick={closeAssignPicker}
+                        style={{
+                          position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)',
+                          animation: isClosingAssignPicker ? 'backdropFadeOut 0.2s ease-in forwards' : 'backdropFade 0.15s ease',
+                        }}
                       />
                       {/* Sheet */}
                       <div style={{
@@ -1010,19 +1089,20 @@ export default function DashboardPage() {
                         left: 0,
                         right: 0,
                         zIndex: 201,
-                        background: '#141428',
+                        background: '#252535',
                         borderRadius: '20px 20px 0 0',
-                        boxShadow: '0 -8px 40px rgba(0,0,0,0.6)',
+                        boxShadow: '0 -12px 48px rgba(0,0,0,0.75)',
                         display: 'flex',
                         flexDirection: 'column',
+                        animation: isClosingAssignPicker ? 'sheetDownOut 0.2s ease-in forwards' : 'sheetUpIn 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
                       }}>
                         {/* Drag handle */}
                         <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0 0.25rem' }}>
-                          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: '#3d3d5a' }} />
+                          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
                         </div>
 
                         {/* Header */}
-                        <div style={{ padding: '0.5rem 1.25rem 0.75rem', borderBottom: '1px solid #2d2d4a' }}>
+                        <div style={{ padding: '0.5rem 1.25rem 0.75rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                           <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#f1f1f8' }}>Assign to</h3>
                         </div>
 
@@ -1043,14 +1123,14 @@ export default function DashboardPage() {
                               textAlign: 'left', transition: 'background 0.12s',
                             }}
                           >
-                            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed #3d3d5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: '#8b8ba8', flexShrink: 0 }}>
+                            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: '#8b8ba8', flexShrink: 0 }}>
                               —
                             </div>
                             <span>Unassigned</span>
                             {pendingAssigned === '' && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>}
                           </button>
 
-                          <div style={{ height: '1px', background: '#2d2d4a', margin: '0.25rem 0.625rem 0.25rem' }} />
+                          <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.625rem' }} />
 
                           {household?.members.map((m, i) => {
                             const isActive = pendingAssigned === m.user_id;
@@ -1083,17 +1163,17 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Footer — Cancel + Done */}
-                        <div style={{ padding: '0.75rem 1.25rem 2rem', borderTop: '1px solid #2d2d4a', display: 'flex', gap: '0.75rem' }}>
+                        <div style={{ padding: '0.75rem 1.25rem 2rem', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: '0.75rem' }}>
                           <button
                             type="button"
-                            onClick={() => setShowAssignPicker(false)}
-                            style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.06)', border: '1.5px solid #2d2d4a', borderRadius: '12px', color: '#8b8ba8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
+                            onClick={closeAssignPicker}
+                            style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#8b8ba8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
                           >
                             Cancel
                           </button>
                           <button
                             type="button"
-                            onClick={() => { setNewAssigned(pendingAssigned); setShowAssignPicker(false); }}
+                            onClick={() => { setNewAssigned(pendingAssigned); closeAssignPicker(); }}
                             style={{ flex: 1, padding: '0.75rem', background: 'linear-gradient(135deg, #a855f7, #ec4899)', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
                           >
                             Done
@@ -1153,42 +1233,6 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Member stats */}
-              {memberStats.length > 0 && (
-                <div className="card" style={{ marginBottom: '1.25rem' }}>
-                  <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem' }}>Who&apos;s doing what</h2>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {memberStats.map(m => {
-                      const pct = m.assigned === 0 ? 0 : Math.round((m.done / m.assigned) * 100);
-                      return (
-                        <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-                          <div
-                            className="avatar"
-                            style={{ width: '38px', height: '38px', background: getAvatarGradient(m.colorIndex), fontSize: '0.75rem', color: 'white' }}
-                          >
-                            {getInitials(m.display_name)}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                              <span style={{ fontWeight: '600', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {m.display_name}
-                                {m.user_id === me?.userId && (
-                                  <span style={{ color: 'var(--text-muted)', fontWeight: '400', marginLeft: '0.375rem', fontSize: '0.8rem' }}>(you)</span>
-                                )}
-                              </span>
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', flexShrink: 0, marginLeft: '0.5rem' }}>{m.done}/{m.assigned}</span>
-                            </div>
-                            <div className="progress-bar" style={{ height: '6px' }}>
-                              <div className="progress-fill" style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               {/* Today chore list */}
               {pendingTodayChores.length === 0 && !showAddForm && doneTodayChores.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: '16px' }}>
@@ -1214,24 +1258,9 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {doneTodayChores.length > 0 && (
-                <div>
-                  <h3 style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-                    Done ({doneTodayChores.length})
-                  </h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {doneTodayChores.map(chore => (
-                      <ChoreCard
-                        key={chore.id}
-                        chore={chore}
-                        members={household?.members ?? []}
-                        currentUserId={me?.userId ?? 0}
-                        onComplete={() => handleComplete(chore.id, true)}
-                        onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
-                        onDelete={() => handleDelete(chore.id)}
-                      />
-                    ))}
-                  </div>
+              {doneTodayChores.length > 0 && pendingTodayChores.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '1.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  All done for today — check the <button onClick={() => setActiveTab('history')} style={{ background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', padding: 0 }}>History</button> tab to see completed chores.
                 </div>
               )}
             </>
@@ -1248,47 +1277,205 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-                  {upcomingGroups.map(({ dateStr, chores: groupChores }) => {
-                    const pending = groupChores.filter(c => !c.is_complete);
-                    const done = groupChores.filter(c => c.is_complete);
-                    return (
-                      <div key={dateStr}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.625rem' }}>
-                          <h3 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                            {formatGroupDate(dateStr)}
-                          </h3>
-                          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{pending.length} pending</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {pending.map(chore => (
-                            <ChoreCard
-                              key={chore.id}
-                              chore={chore}
-                              members={household?.members ?? []}
-                              currentUserId={me?.userId ?? 0}
-                              onComplete={() => handleComplete(chore.id, false)}
-                              onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
-                              onDelete={() => handleDelete(chore.id)}
-                            />
-                          ))}
-                          {done.map(chore => (
-                            <ChoreCard
-                              key={chore.id}
-                              chore={chore}
-                              members={household?.members ?? []}
-                              currentUserId={me?.userId ?? 0}
-                              onComplete={() => handleComplete(chore.id, true)}
-                              onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
-                              onDelete={() => handleDelete(chore.id)}
-                            />
-                          ))}
-                        </div>
+                  {upcomingGroups.map(({ dateStr, chores: groupChores }) => (
+                    <div key={dateStr}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.625rem' }}>
+                        <h3 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {formatGroupDate(dateStr)}
+                        </h3>
+                        <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{groupChores.length} pending</span>
                       </div>
-                    );
-                  })}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {groupChores.map(chore => (
+                          <ChoreCard
+                            key={chore.id}
+                            chore={chore}
+                            members={household?.members ?? []}
+                            currentUserId={me?.userId ?? 0}
+                            onComplete={() => handleComplete(chore.id, false)}
+                            onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
+                            onDelete={() => handleDelete(chore.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
+            </>
+          )}
+
+          {/* ── HISTORY tab ── */}
+          {activeTab === 'history' && (
+            <>
+              {historyGroups.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: '16px' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🕐</div>
+                  <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>No completed chores yet</div>
+                  <div style={{ fontSize: '0.85rem' }}>Completed chores will appear here.</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+                  {historyGroups.map(({ dateStr, chores: groupChores }) => (
+                    <div key={dateStr}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.625rem' }}>
+                        <h3 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {formatHistoryGroupDate(dateStr)}
+                        </h3>
+                        <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{groupChores.length} done</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {groupChores.map(chore => (
+                          <button
+                            key={chore.id}
+                            onClick={() => setHistoryPopupChore(chore)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: '0.75rem',
+                              background: 'var(--card-bg, rgba(255,255,255,0.04))',
+                              border: '1px solid var(--border)',
+                              borderRadius: '14px',
+                              padding: '0.75rem 0.875rem',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              width: '100%',
+                              opacity: 0.72,
+                              transition: 'opacity 0.15s',
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                            onMouseLeave={e => (e.currentTarget.style.opacity = '0.72')}
+                          >
+                            {/* Filled checkmark */}
+                            <div style={{
+                              width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0, marginTop: '1px',
+                              background: 'linear-gradient(135deg, #14b8a6, #6366f1)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: 'white', fontSize: '0.65rem', fontWeight: '700',
+                            }}>✓</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{
+                                fontWeight: '600', fontSize: '0.9rem',
+                                textDecoration: 'line-through',
+                                color: 'var(--text-muted)',
+                                display: 'block',
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>
+                                {chore.title}
+                              </span>
+                              {chore.completed_by_name && (
+                                <span style={{ fontSize: '0.78rem', color: '#0d7d72', fontWeight: '500', marginTop: '0.2rem', display: 'block' }}>
+                                  ✓ Done by {chore.completed_by === me?.userId ? 'you' : chore.completed_by_name}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── History chore action popup ── */}
+          {historyPopupChore && (
+            <>
+              {/* Backdrop */}
+              <div
+                onClick={closeHistoryPopup}
+                style={{
+                  position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)',
+                  animation: isClosingHistory ? 'backdropFadeOut 0.2s ease-in forwards' : 'backdropFade 0.15s ease',
+                }}
+              />
+              {/* Floating card */}
+              <div style={{
+                position: 'fixed',
+                bottom: `${NAV_H + 16}px`,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 201,
+                background: '#252535',
+                borderRadius: '20px',
+                width: 'min(360px, calc(100vw - 2rem))',
+                boxShadow: '0 -8px 48px rgba(0,0,0,0.75)',
+                overflow: 'hidden',
+                animation: isClosingHistory ? 'popUpOut 0.2s ease-in forwards' : 'popUpIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}>
+                {/* Drag handle */}
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0 0.25rem' }}>
+                  <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: '#3d3d5a' }} />
+                </div>
+
+                {/* Header */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.5rem 2.5rem 0.875rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                  <span style={{ fontWeight: '700', fontSize: '0.95rem', color: '#f1f1f8', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                    {historyPopupChore.title}
+                  </span>
+                  <button
+                    onClick={closeHistoryPopup}
+                    style={{
+                      position: 'absolute', right: '1rem',
+                      width: '28px', height: '28px', borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.1)', border: 'none',
+                      color: '#9b9bb8', cursor: 'pointer',
+                      fontSize: '0.8rem', fontWeight: '700',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >✕</button>
+                </div>
+
+                {/* Completed info */}
+                {historyPopupChore.completed_by_name && (
+                  <div style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#8b8ba8', fontSize: '0.82rem', textAlign: 'center' }}>
+                    ✓ Done by {historyPopupChore.completed_by === me?.userId ? 'you' : historyPopupChore.completed_by_name}
+                    {historyPopupChore.completed_at && (
+                      <> · {new Date(historyPopupChore.completed_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</>
+                    )}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ padding: '1rem 1.25rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <button
+                    onClick={async () => {
+                      const id = historyPopupChore.id;
+                      closeHistoryPopup();
+                      await handleComplete(id, true);
+                    }}
+                    style={{
+                      width: '100%', padding: '0.875rem',
+                      background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+                      border: 'none', borderRadius: '14px',
+                      color: 'white', cursor: 'pointer',
+                      fontSize: '0.95rem', fontWeight: '700',
+                    }}
+                  >
+                    Undo
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const id = historyPopupChore.id;
+                      closeHistoryPopup();
+                      await handleDeleteNoConfirm(id);
+                    }}
+                    style={{
+                      width: '100%', padding: '0.875rem',
+                      background: 'rgba(239,68,68,0.12)',
+                      border: '1px solid rgba(239,68,68,0.25)',
+                      borderRadius: '14px',
+                      color: '#ef4444', cursor: 'pointer',
+                      fontSize: '0.95rem', fontWeight: '600',
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -1303,6 +1490,7 @@ export default function DashboardPage() {
             flexDirection: 'column',
             maxWidth: '700px',
             margin: '0 auto',
+            animation: 'viewFadeIn 0.22s ease',
           }}
         >
           {/* Members strip */}
@@ -1539,6 +1727,7 @@ export default function DashboardPage() {
             maxWidth: '700px',
             margin: '0 auto',
             padding: `1.5rem 1.25rem calc(${NAV_H}px + 1.5rem)`,
+            animation: 'viewFadeIn 0.22s ease',
           }}
         >
           {/* Profile card */}
@@ -1680,7 +1869,7 @@ export default function DashboardPage() {
         {(
           [
             { key: 'chores', label: 'Chores', Icon: IconChores },
-            { key: 'bulletin', label: 'Board', Icon: IconBoard },
+            { key: 'bulletin', label: 'Messages', Icon: IconBoard },
             { key: 'settings', label: 'Settings', Icon: IconSettings },
           ] as const
         ).map(({ key, label, Icon }) => {
@@ -1688,6 +1877,7 @@ export default function DashboardPage() {
           return (
             <button
               key={key}
+              className="nav-btn"
               onClick={() => setActiveView(key)}
               style={{
                 flex: 1,
@@ -1700,7 +1890,6 @@ export default function DashboardPage() {
                 border: 'none',
                 cursor: 'pointer',
                 color: isActive ? '#a855f7' : 'var(--text-muted)',
-                transition: 'color 0.2s',
                 padding: '0.5rem 0',
               }}
             >
@@ -1741,6 +1930,12 @@ function ChoreCard({
   onDelete: () => void;
 }) {
   const [showAssign, setShowAssign] = useState(false);
+  const [closingAssign, setClosingAssign] = useState(false);
+
+  function closeAssign() {
+    setClosingAssign(true);
+    setTimeout(() => { setShowAssign(false); setClosingAssign(false); }, 180);
+  }
 
   const CARD_COLORS = [
     ['#a855f7', '#ec4899'],
@@ -1768,7 +1963,6 @@ function ChoreCard({
         opacity: chore.is_complete ? 0.65 : 1,
         transition: 'opacity 0.2s',
         position: 'relative',
-        zIndex: showAssign ? 200 : undefined,
       }}
     >
       <button
@@ -1870,7 +2064,7 @@ function ChoreCard({
 
             {!chore.is_complete && (
               <button
-                onClick={() => setShowAssign(s => !s)}
+                onClick={() => setShowAssign(true)}
                 style={{
                   background: 'none',
                   border: '1px solid var(--border)',
@@ -1890,7 +2084,7 @@ function ChoreCard({
                   (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
                 }}
               >
-                {showAssign ? 'Cancel' : 'Reassign'}
+                Reassign
               </button>
             )}
 
@@ -1901,106 +2095,145 @@ function ChoreCard({
             )}
           </div>
 
-          {/* Calendar-style assign popup */}
+          {/* Reassign popup */}
           {showAssign && (
             <>
-              <div onClick={() => setShowAssign(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+              {/* Backdrop */}
               <div
+                onClick={closeAssign}
                 style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 4px)',
-                  left: 0,
-                  zIndex: 100,
-                  background: '#141428',
-                  border: '1px solid #2d2d4a',
-                  borderRadius: '14px',
-                  padding: '0.5rem',
-                  minWidth: '210px',
-                  boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-                  overflow: 'hidden',
+                  position: 'fixed',
+                  inset: 0,
+                  zIndex: 200,
+                  background: 'rgba(0,0,0,0.6)',
+                  animation: closingAssign ? 'backdropFadeOut 0.18s ease-in forwards' : 'backdropFade 0.15s ease',
                 }}
-              >
-                {/* Unassign option */}
-                <button
-                  type="button"
-                  onClick={() => { onAssign(null); setShowAssign(false); }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.625rem',
-                    padding: '0.5rem 0.625rem',
-                    background: !chore.assigned_to ? 'rgba(168,85,247,0.15)' : 'transparent',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: !chore.assigned_to ? '#a855f7' : '#8b8ba8',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem',
-                    fontWeight: !chore.assigned_to ? '600' : '400',
-                    textAlign: 'left',
-                    transition: 'background 0.12s',
-                    marginBottom: '0.25rem',
-                  }}
-                  onMouseEnter={e => { if (chore.assigned_to) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; }}
-                  onMouseLeave={e => { if (chore.assigned_to) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                >
-                  <div style={{
-                    width: '28px', height: '28px', borderRadius: '50%',
-                    background: 'rgba(255,255,255,0.06)', border: '1.5px dashed #3d3d5a',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.8rem', color: '#8b8ba8', flexShrink: 0,
-                  }}>
-                    —
-                  </div>
-                  <span>Unassigned</span>
-                  {!chore.assigned_to && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#a855f7' }}>✓</span>}
-                </button>
+              />
+              {/* Floating centered card */}
+              <div style={{
+                position: 'fixed',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 201,
+                background: '#252535',
+                borderRadius: '20px',
+                width: 'min(340px, calc(100vw - 2rem))',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.75)',
+                overflow: 'hidden',
+                animation: closingAssign ? 'popOut 0.18s ease-in forwards' : 'popIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}>
+                {/* Header */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 1rem 0.875rem' }}>
+                  <span style={{ fontWeight: '700', fontSize: '1rem', color: '#f1f1f8' }}>Reassign</span>
+                  <button
+                    type="button"
+                    onClick={closeAssign}
+                    style={{
+                      position: 'absolute',
+                      right: '1rem',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      color: '#9b9bb8',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: '700',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
 
-                {/* Divider */}
-                <div style={{ height: '1px', background: '#2d2d4a', margin: '0.25rem 0.625rem 0.5rem' }} />
+                {/* Options list */}
+                <div style={{ padding: '0 0.5rem 1rem', borderTop: '1px solid rgba(255,255,255,0.07)', overflowY: 'auto', maxHeight: '50vh' }}>
+                  {/* Unassign option */}
+                  <button
+                    type="button"
+                    onClick={() => { onAssign(null); closeAssign(); }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.75rem 0.625rem',
+                      background: !chore.assigned_to ? 'rgba(168,85,247,0.15)' : 'transparent',
+                      border: 'none',
+                      borderRadius: '10px',
+                      color: !chore.assigned_to ? '#a855f7' : '#8b8ba8',
+                      cursor: 'pointer',
+                      fontSize: '0.95rem',
+                      fontWeight: !chore.assigned_to ? '600' : '400',
+                      textAlign: 'left',
+                      transition: 'background 0.12s',
+                      marginTop: '0.5rem',
+                    }}
+                    onMouseEnter={e => { if (chore.assigned_to) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                    onMouseLeave={e => { if (chore.assigned_to) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                  >
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.9rem', color: '#8b8ba8', flexShrink: 0,
+                    }}>
+                      —
+                    </div>
+                    <span>Unassigned</span>
+                    {!chore.assigned_to && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>}
+                  </button>
 
-                {/* Member options */}
-                {members.map((m, i) => {
-                  const isActive = chore.assigned_to === m.user_id;
-                  return (
-                    <button
-                      key={m.user_id}
-                      type="button"
-                      onClick={() => { onAssign(m.user_id); setShowAssign(false); }}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.625rem',
-                        padding: '0.5rem 0.625rem',
-                        background: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
-                        border: 'none',
-                        borderRadius: '8px',
-                        color: isActive ? '#a855f7' : '#f1f1f8',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                        fontWeight: isActive ? '600' : '400',
-                        textAlign: 'left',
-                        transition: 'background 0.12s',
-                      }}
-                      onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; }}
-                      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                    >
-                      <div style={{
-                        width: '28px', height: '28px', borderRadius: '50%',
-                        background: cardGradient(i),
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '0.65rem', fontWeight: '700', color: 'white', flexShrink: 0,
-                      }}>
-                        {getInitials(m.display_name)}
-                      </div>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}
-                      </span>
-                      {isActive && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#a855f7', flexShrink: 0 }}>✓</span>}
-                    </button>
-                  );
-                })}
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.625rem' }} />
+
+                  {/* Member options */}
+                  {members.map((m, i) => {
+                    const isActive = chore.assigned_to === m.user_id;
+                    return (
+                      <button
+                        key={m.user_id}
+                        type="button"
+                        onClick={() => { onAssign(m.user_id); closeAssign(); }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.75rem 0.625rem',
+                          background: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                          border: 'none',
+                          borderRadius: '10px',
+                          color: isActive ? '#a855f7' : '#f1f1f8',
+                          cursor: 'pointer',
+                          fontSize: '0.95rem',
+                          fontWeight: isActive ? '600' : '400',
+                          textAlign: 'left',
+                          transition: 'background 0.12s',
+                        }}
+                        onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                        onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                      >
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '50%',
+                          background: cardGradient(i),
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.75rem', fontWeight: '700', color: 'white', flexShrink: 0,
+                        }}>
+                          {getInitials(m.display_name)}
+                        </div>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}
+                        </span>
+                        {isActive && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}

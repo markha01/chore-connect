@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__claude_ai_OSC__list-available-services"
+      "mcp__claude_ai_OSC__list-available-services",
+      "Bash(npx tsc:*)"
     ]
   }
 }
