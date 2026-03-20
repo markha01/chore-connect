@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent, useCallback } from 'react';
+import { useState, useEffect, useRef, FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ interface Chore {
   completed_at: string | null;
   completed_by: number | null;
   completed_by_name: string | null;
-  due_date: string | null; // YYYY-MM-DD
+  due_date: string | null;
 }
 
 interface Me {
@@ -41,6 +41,16 @@ interface Me {
   username: string;
   displayName: string;
   household: { id: number; name: string; inviteCode: string; role: string } | null;
+}
+
+interface Message {
+  id: number;
+  user_id: number;
+  display_name: string;
+  content: string;
+  created_at: string;
+  like_count: number;
+  liked_by_me: boolean;
 }
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
@@ -73,6 +83,36 @@ function formatGroupDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return dateToStr(d);
+}
+
+// Offsets (in days) for each frequency beyond the base occurrence
+const FREQUENCY_OFFSETS: Record<string, number[]> = {
+  once: [],
+  daily: [1, 2, 3, 4, 5, 6, 7],
+  'every-other-day': [2, 4, 6, 8, 10, 12, 14],
+  weekly: [7, 14, 21, 28],
+  'every-other-week': [14, 28, 42, 56],
+  monthly: [30, 60, 90],
+};
+
+function formatMessageTime(createdAt: string): string {
+  const date = new Date(createdAt);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // ── Avatar helpers ─────────────────────────────────────────────────────────────
 
 const AVATAR_COLORS = [
@@ -93,7 +133,15 @@ function getInitials(name: string): string {
   return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 }
 
-// ── DatePickerCalendar component ───────────────────────────────────────────────
+function getMembersLabel(members: Member[]): string {
+  if (members.length === 0) return '';
+  if (members.length === 1) return members[0].display_name;
+  if (members.length === 2) return `${members[0].display_name} and ${members[1].display_name}`;
+  if (members.length === 3) return `${members[0].display_name}, ${members[1].display_name}, and ${members[2].display_name}`;
+  return `${members[0].display_name}, ${members[1].display_name}, and ${members.length - 2} others`;
+}
+
+// ── DatePickerCalendar component (Things-style floating card) ──────────────────
 
 function DatePickerCalendar({
   value,
@@ -113,9 +161,11 @@ function DatePickerCalendar({
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
-  const DAY_HEADERS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  // Things starts the week on Monday
+  const DAY_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  // Offset so Monday = column 0: (Sun=0 → 6, Mon=1 → 0, … Sat=6 → 5)
+  const firstDow = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const cells: (number | null)[] = [];
   for (let i = 0; i < firstDow; i++) cells.push(null);
@@ -139,114 +189,179 @@ function DatePickerCalendar({
     onClose();
   }
 
+  const isValueToday = value === todayStr;
+
   return (
     <>
-      {/* Backdrop to close on click-outside */}
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+      {/* Backdrop */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)' }} />
 
-      {/* Calendar popup */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 'calc(100% + 6px)',
-          left: 0,
-          zIndex: 100,
-          background: '#141428',
-          border: '1px solid #2d2d4a',
-          borderRadius: '14px',
-          padding: '1rem',
-          width: '268px',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-        }}
-      >
-        {/* Month / year navigation */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+      {/* Floating centered card — like Things */}
+      <div style={{
+        position: 'fixed',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        zIndex: 201,
+        background: '#252535',
+        borderRadius: '20px',
+        width: 'min(340px, calc(100vw - 2rem))',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.75)',
+        overflow: 'hidden',
+      }}>
+
+        {/* Header: "When?" centred + ✕ */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 1rem 0.875rem' }}>
+          <span style={{ fontWeight: '700', fontSize: '1rem', color: '#f1f1f8' }}>When?</span>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              position: 'absolute',
+              right: '1rem',
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.1)',
+              border: 'none',
+              color: '#9b9bb8',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* ⭐ Today quick row */}
+        <button
+          type="button"
+          onClick={() => { onChange(todayStr); onClose(); }}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0.75rem 1.125rem',
+            background: 'transparent',
+            border: 'none',
+            borderTop: '1px solid rgba(255,255,255,0.07)',
+            color: '#f1f1f8',
+            cursor: 'pointer',
+            fontSize: '0.95rem',
+            fontWeight: '500',
+            textAlign: 'left',
+            transition: 'background 0.12s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        >
+          <span style={{ fontSize: '1rem' }}>⭐</span>
+          <span>Today</span>
+          {isValueToday && (
+            <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>
+          )}
+        </button>
+
+        {/* Month navigation */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.625rem 0.875rem 0.375rem',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+        }}>
           <button
             type="button"
             onClick={prevMonth}
-            style={{ background: 'none', border: 'none', color: '#8b8ba8', cursor: 'pointer', fontSize: '1.2rem', padding: '0.2rem 0.6rem', borderRadius: '6px', lineHeight: 1 }}
-          >
-            ‹
-          </button>
-          <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#f1f1f8' }}>
+            style={{ background: 'none', border: 'none', color: '#9b9bb8', cursor: 'pointer', fontSize: '1.3rem', padding: '0.25rem 0.5rem', lineHeight: 1 }}
+          >‹</button>
+          <span style={{ fontWeight: '600', fontSize: '0.9rem', color: '#f1f1f8' }}>
             {MONTH_NAMES[viewMonth]} {viewYear}
           </span>
           <button
             type="button"
             onClick={nextMonth}
-            style={{ background: 'none', border: 'none', color: '#8b8ba8', cursor: 'pointer', fontSize: '1.2rem', padding: '0.2rem 0.6rem', borderRadius: '6px', lineHeight: 1 }}
-          >
-            ›
-          </button>
+            style={{ background: 'none', border: 'none', color: '#9b9bb8', cursor: 'pointer', fontSize: '1.3rem', padding: '0.25rem 0.5rem', lineHeight: 1 }}
+          >›</button>
         </div>
 
-        {/* Day-of-week headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.25rem' }}>
-          {DAY_HEADERS.map(d => (
-            <div
-              key={d}
-              style={{ textAlign: 'center', fontSize: '0.68rem', fontWeight: '600', color: '#6b6882', paddingBottom: '0.3rem' }}
-            >
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Day cells */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-          {cells.map((d, i) => {
-            if (d === null) return <div key={i} />;
-            const cellStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            const isToday = cellStr === todayStr;
-            const isSelected = cellStr === value;
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={() => selectDay(d)}
-                style={{
-                  width: '100%',
-                  aspectRatio: '1',
-                  borderRadius: '50%',
-                  border: isToday && !isSelected ? '1.5px solid rgba(168,85,247,0.55)' : '1.5px solid transparent',
-                  background: isSelected ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
-                  color: isSelected ? 'white' : isToday ? '#a855f7' : '#f1f1f8',
-                  cursor: 'pointer',
-                  fontSize: '0.82rem',
-                  fontWeight: isToday || isSelected ? '700' : '400',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'background 0.12s',
-                }}
-                onMouseEnter={e => {
-                  if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(168,85,247,0.15)';
-                }}
-                onMouseLeave={e => {
-                  if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                }}
-              >
+        {/* Calendar grid */}
+        <div style={{ padding: '0 0.875rem 0.75rem' }}>
+          {/* Day headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.125rem' }}>
+            {DAY_HEADERS.map(d => (
+              <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', fontWeight: '600', color: '#5a5a78', padding: '0.25rem 0' }}>
                 {d}
-              </button>
-            );
-          })}
+              </div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px' }}>
+            {cells.map((d, i) => {
+              if (d === null) return <div key={i} />;
+              const cellStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              const isToday = cellStr === todayStr;
+              const isSelected = cellStr === value;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => selectDay(d)}
+                  style={{
+                    width: '100%',
+                    aspectRatio: '1',
+                    borderRadius: '50%',
+                    border: 'none',
+                    background: isSelected
+                      ? 'linear-gradient(135deg, #a855f7, #ec4899)'
+                      : 'transparent',
+                    color: isSelected ? 'white' : isToday ? '#a855f7' : '#d4d4e8',
+                    cursor: 'pointer',
+                    fontSize: '0.88rem',
+                    fontWeight: isSelected || isToday ? '700' : '400',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'background 0.12s',
+                    position: 'relative',
+                  }}
+                  onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(168,85,247,0.18)'; }}
+                  onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                >
+                  {/* Today dot indicator (like Things' subtle marker) */}
+                  {isToday && !isSelected && (
+                    <span style={{ position: 'absolute', bottom: '3px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', borderRadius: '50%', background: '#a855f7' }} />
+                  )}
+                  {d}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Jump to today */}
-        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #2d2d4a', paddingTop: '0.625rem' }}>
+        {/* Footer: Jump to today — pink pill like Things' "Clear" */}
+        <div style={{ padding: '0.5rem 0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
           <button
             type="button"
             onClick={() => { onChange(todayStr); onClose(); }}
             style={{
               width: '100%',
-              padding: '0.4rem',
-              background: 'none',
+              padding: '0.8rem',
+              background: 'linear-gradient(135deg, #a855f7, #ec4899)',
               border: 'none',
-              borderRadius: '8px',
-              color: '#a855f7',
+              borderRadius: '14px',
+              color: 'white',
               cursor: 'pointer',
-              fontSize: '0.82rem',
-              fontWeight: '600',
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              letterSpacing: '0.01em',
             }}
           >
             Jump to today
@@ -257,18 +372,54 @@ function DatePickerCalendar({
   );
 }
 
+// ── Nav icons ──────────────────────────────────────────────────────────────────
+
+function IconChores({ active }: { active: boolean }) {
+  const color = active ? '#a855f7' : '#8b8ba8';
+  return (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
+
+function IconBoard({ active }: { active: boolean }) {
+  const color = active ? '#a855f7' : '#8b8ba8';
+  return (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+    </svg>
+  );
+}
+
+function IconSettings({ active }: { active: boolean }) {
+  const color = active ? '#a855f7' : '#8b8ba8';
+  return (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </svg>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter();
 
+  // Core data
   const [me, setMe] = useState<Me | null>(null);
   const [household, setHousehold] = useState<Household | null>(null);
   const [chores, setChores] = useState<Chore[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Tab
+  // Navigation
+  const [activeView, setActiveView] = useState<'chores' | 'bulletin' | 'settings'>('chores');
+
+  // Chores tab
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming'>('today');
 
   // Add chore form
@@ -280,13 +431,22 @@ export default function DashboardPage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [addError, setAddError] = useState('');
   const [adding, setAdding] = useState(false);
+  const [newFrequency, setNewFrequency] = useState<'once' | 'daily' | 'every-other-day' | 'weekly' | 'every-other-week' | 'monthly'>('once');
+  const [showAssignPicker, setShowAssignPicker] = useState(false);
+  const [pendingAssigned, setPendingAssigned] = useState<number | ''>('');
 
-  // Invite code
-  const [showInvite, setShowInvite] = useState(false);
+  // Settings
   const [copiedInvite, setCopiedInvite] = useState(false);
-
-  // Sign out
   const [signingOut, setSigningOut] = useState(false);
+
+  // Bulletin board
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
 
   const fetchAll = useCallback(async () => {
     try {
@@ -323,7 +483,36 @@ export default function DashboardPage() {
     }
   }, [router]);
 
+  const fetchMessages = useCallback(async () => {
+    setLoadingMessages(true);
+    try {
+      const res = await fetch('/api/messages');
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages ?? []);
+      }
+    } catch { /* silent */ }
+    finally {
+      setLoadingMessages(false);
+    }
+  }, []);
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    if (activeView === 'bulletin') {
+      fetchMessages();
+    }
+  }, [activeView, fetchMessages]);
+
+  // Scroll to bottom when messages update in bulletin view
+  useEffect(() => {
+    if (activeView === 'bulletin' && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [messages, activeView]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -354,12 +543,29 @@ export default function DashboardPage() {
       const data = await res.json();
       if (!res.ok) { setAddError(data.error ?? 'Could not add chore.'); return; }
 
+      // Create future occurrences for recurring frequencies
+      const offsets = FREQUENCY_OFFSETS[newFrequency] ?? [];
+      for (const offset of offsets) {
+        await fetch('/api/chores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: newTitle,
+            description: newDesc || undefined,
+            assignedTo: newAssigned || null,
+            dueDate: addDays(newDueDate, offset),
+          }),
+        });
+      }
+
       setNewTitle('');
       setNewDesc('');
       setNewAssigned('');
       setNewDueDate(getTodayStr());
+      setNewFrequency('once');
+      setShowAssignPicker(false);
+      setPendingAssigned('');
       setShowAddForm(false);
-      // Switch to the tab where the new chore will appear
       const todayStr = getTodayStr();
       setActiveTab(newDueDate > todayStr ? 'upcoming' : 'today');
       await fetchAll();
@@ -408,24 +614,68 @@ export default function DashboardPage() {
     });
   }
 
+  async function handleSendMessage(e: FormEvent) {
+    e.preventDefault();
+    const content = messageInput.trim();
+    if (!content || sendingMessage) return;
+
+    setSendingMessage(true);
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      if (res.ok) {
+        setMessageInput('');
+        await fetchMessages();
+      }
+    } catch { /* silent */ }
+    finally {
+      setSendingMessage(false);
+    }
+  }
+
+  async function handleLikeMessage(messageId: number) {
+    // Optimistic update
+    setMessages(prev => prev.map(m =>
+      m.id === messageId
+        ? { ...m, liked_by_me: !m.liked_by_me, like_count: m.liked_by_me ? m.like_count - 1 : m.like_count + 1 }
+        : m
+    ));
+    try {
+      await fetch(`/api/messages/${messageId}`, { method: 'PATCH' });
+    } catch {
+      // Revert — same toggle brings it back to original
+      setMessages(prev => prev.map(m =>
+        m.id === messageId
+          ? { ...m, liked_by_me: !m.liked_by_me, like_count: m.liked_by_me ? m.like_count - 1 : m.like_count + 1 }
+          : m
+      ));
+    }
+  }
+
+  async function handleDeleteMessage(messageId: number) {
+    if (!confirm('Delete this message?')) return;
+    try {
+      const res = await fetch(`/api/messages/${messageId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setMessages(prev => prev.filter(m => m.id !== messageId));
+      }
+    } catch { /* silent */ }
+  }
+
   // ── Derived data ───────────────────────────────────────────────────────────
 
   const todayStr = getTodayStr();
-
-  // Today: no due_date OR due_date <= today (handles overdue chores too)
   const todayChores = chores.filter(c => !c.due_date || c.due_date <= todayStr);
-  // Upcoming: due_date strictly after today
   const upcomingChores = chores.filter(c => c.due_date && c.due_date > todayStr);
-
   const pendingTodayChores = todayChores.filter(c => !c.is_complete);
   const doneTodayChores = todayChores.filter(c => c.is_complete);
-
-  // Progress scoped to today's chores only
   const totalToday = todayChores.length;
   const completedToday = doneTodayChores.length;
   const progressPct = totalToday === 0 ? 0 : Math.round((completedToday / totalToday) * 100);
 
-  // Group upcoming chores by date (ascending)
   const upcomingGroups: { dateStr: string; chores: Chore[] }[] = (() => {
     const map = new Map<string, Chore[]>();
     upcomingChores.forEach(c => {
@@ -444,13 +694,18 @@ export default function DashboardPage() {
     return { ...m, assigned: assigned.length, done: done.length, colorIndex: i };
   }) ?? [];
 
+  function getMemberColorIndex(userId: number): number {
+    const idx = household?.members.findIndex(m => m.user_id === userId) ?? -1;
+    return idx >= 0 ? idx : 0;
+  }
+
   // ── Loading / error states ─────────────────────────────────────────────────
 
   if (loading) {
     return (
       <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
         <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ fontSize: '2rem', marginBottom: '0.75rem', animation: 'spin 1s linear infinite' }}>⟳</div>
+          <div style={{ fontSize: '2rem', marginBottom: '0.75rem', animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</div>
           <div>Loading your household…</div>
         </div>
       </main>
@@ -471,350 +726,170 @@ export default function DashboardPage() {
     );
   }
 
+  const NAV_H = 64;
+  const HEADER_H = 48;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <main style={{ minHeight: '100vh', background: 'var(--bg-main)', paddingBottom: '3rem' }}>
-      {/* Header */}
+    <main style={{ minHeight: '100vh', background: 'var(--bg-main)' }}>
+
+      {/* Slim sticky header */}
       <header
         style={{
-          background: 'rgba(17,17,32,0.9)',
+          height: `${HEADER_H}px`,
+          background: 'rgba(17,17,32,0.95)',
           backdropFilter: 'blur(12px)',
           borderBottom: '1px solid var(--border)',
           position: 'sticky',
           top: 0,
           zIndex: 50,
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 1.25rem',
+          gap: '0.5rem',
         }}
       >
+        <span style={{ fontSize: '1.1rem' }}>🏠</span>
+        <span style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+          {household?.name ?? 'My Household'}
+        </span>
+      </header>
+
+      {/* ══ CHORES VIEW ══════════════════════════════════════════════════════ */}
+      {activeView === 'chores' && (
         <div
           style={{
             maxWidth: '700px',
             margin: '0 auto',
-            padding: '0.875rem 1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem',
+            padding: `1rem 1.25rem calc(${NAV_H}px + 1.5rem)`,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <span style={{ fontSize: '1.25rem' }}>🏠</span>
-            <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-primary)' }}>
-              {household?.name ?? 'My Household'}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              onClick={() => setShowInvite(s => !s)}
-              className="btn-ghost"
-              style={{ fontSize: '0.8rem' }}
-            >
-              + Invite
-            </button>
-            <div
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: getAvatarGradient(0),
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                color: 'white',
-                flexShrink: 0,
-              }}
-            >
-              {getInitials(me?.displayName ?? '?')}
-            </div>
-            <button
-              onClick={handleSignOut}
-              className="btn-ghost"
-              style={{ fontSize: '0.8rem' }}
-              disabled={signingOut}
-            >
-              {signingOut ? '…' : 'Sign out'}
-            </button>
-          </div>
-        </div>
-
-        {/* Invite code panel */}
-        {showInvite && (
-          <div style={{ borderTop: '1px solid #e8e3d8', background: '#fdfcf8', padding: '1rem 0' }}>
-            <div
-              style={{
-                maxWidth: '700px',
-                margin: '0 auto',
-                padding: '0 1.25rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '1rem',
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#6b6882', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.3rem' }}>
-                  Invite code
-                </div>
-                <div
-                  style={{
-                    fontSize: '1.6rem',
-                    fontWeight: '800',
-                    letterSpacing: '0.25em',
-                    fontFamily: 'monospace',
-                    background: 'linear-gradient(135deg, #a855f7, #14b8a6)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {household?.inviteCode}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#6b6882', marginTop: '0.25rem' }}>
-                  Share this with your housemates so they can join
-                </div>
-              </div>
-              <button
-                onClick={copyInviteCode}
-                style={{
-                  background: copiedInvite ? 'rgba(20,184,166,0.12)' : 'rgba(168,85,247,0.1)',
-                  border: copiedInvite ? '1.5px solid rgba(20,184,166,0.4)' : '1.5px solid rgba(168,85,247,0.35)',
-                  borderRadius: '10px',
-                  color: copiedInvite ? '#0d7d72' : '#7c3aed',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  fontWeight: '600',
-                  padding: '0.5rem 1.1rem',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                {copiedInvite ? '✓ Copied!' : 'Copy code'}
-              </button>
-            </div>
-          </div>
-        )}
-      </header>
-
-      <div style={{ maxWidth: '700px', margin: '0 auto', padding: '1.5rem 1.25rem' }}>
-
-        {/* Progress — scoped to today */}
-        <div className="card" style={{ marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '0.125rem' }}>
-                Today&apos;s progress
-              </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                {completedToday} of {totalToday} {totalToday === 1 ? 'chore' : 'chores'} done today
-              </p>
-            </div>
-            <div
-              style={{
-                fontSize: '1.75rem',
-                fontWeight: '800',
-                background: 'linear-gradient(135deg, #a855f7, #ec4899)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >
-              {progressPct}%
-            </div>
-          </div>
-
-          <div className="progress-bar">
-            <div className="progress-fill" style={{ width: `${progressPct}%` }} />
-          </div>
-
-          {totalToday === 0 && (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.75rem', textAlign: 'center' }}>
-              Add chores for today to start tracking progress!
-            </p>
-          )}
-          {progressPct === 100 && totalToday > 0 && (
-            <p style={{ color: '#0d7d72', fontSize: '0.85rem', marginTop: '0.75rem', textAlign: 'center', fontWeight: '600' }}>
-              🎉 All done for today — great work everyone!
-            </p>
-          )}
-        </div>
-
-        {/* Members */}
-        {memberStats.length > 0 && (
-          <div className="card" style={{ marginBottom: '1.25rem' }}>
-            <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem' }}>
-              Who&apos;s doing what
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {memberStats.map(m => {
-                const pct = m.assigned === 0 ? 0 : Math.round((m.done / m.assigned) * 100);
-                return (
-                  <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-                    <div
-                      className="avatar"
-                      style={{ width: '38px', height: '38px', background: getAvatarGradient(m.colorIndex), fontSize: '0.75rem', color: 'white' }}
-                    >
-                      {getInitials(m.display_name)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                        <span style={{ fontWeight: '600', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {m.display_name}
-                          {m.user_id === me?.userId && (
-                            <span style={{ color: 'var(--text-muted)', fontWeight: '400', marginLeft: '0.375rem', fontSize: '0.8rem' }}>
-                              (you)
-                            </span>
-                          )}
-                        </span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', flexShrink: 0, marginLeft: '0.5rem' }}>
-                          {m.done}/{m.assigned}
-                        </span>
-                      </div>
-                      <div className="progress-bar" style={{ height: '6px' }}>
-                        <div className="progress-fill" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Tabs + Add button row */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '0.875rem',
-            gap: '0.75rem',
-          }}
-        >
-          {/* Tab switcher */}
+          {/* Tabs + Add chore — very top */}
           <div
             style={{
               display: 'flex',
-              gap: '0.25rem',
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid var(--border)',
-              borderRadius: '10px',
-              padding: '3px',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '1rem',
+              gap: '0.75rem',
             }}
           >
-            {(['today', 'upcoming'] as const).map(tab => {
-              const count = tab === 'today' ? todayChores.length : upcomingChores.length;
-              const isActive = activeTab === tab;
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    background: isActive ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
-                    border: 'none',
-                    borderRadius: '7px',
-                    color: isActive ? 'white' : 'var(--text-muted)',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem',
-                    fontWeight: isActive ? '700' : '500',
-                    padding: '0.375rem 0.875rem',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.375rem',
-                  }}
-                >
-                  {tab === 'today' ? 'Today' : 'Upcoming'}
-                  <span
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.25rem',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                padding: '3px',
+              }}
+            >
+              {(['today', 'upcoming'] as const).map(tab => {
+                const count = tab === 'today' ? todayChores.length : upcomingChores.length;
+                const isActive = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => { setActiveTab(tab); setShowAddForm(false); }}
                     style={{
-                      background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
-                      borderRadius: '100px',
-                      fontSize: '0.7rem',
-                      fontWeight: '700',
-                      padding: '0.05rem 0.4rem',
-                      lineHeight: '1.6',
+                      background: isActive ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
+                      border: 'none',
+                      borderRadius: '7px',
+                      color: isActive ? 'white' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: isActive ? '700' : '500',
+                      padding: '0.375rem 0.875rem',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.375rem',
                     }}
                   >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
+                    {tab === 'today' ? 'Today' : 'Upcoming'}
+                    <span
+                      style={{
+                        background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                        borderRadius: '100px',
+                        fontSize: '0.7rem',
+                        fontWeight: '700',
+                        padding: '0.05rem 0.4rem',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
+              style={{
+                background: showAddForm ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #a855f7, #ec4899)',
+                border: showAddForm ? '1px solid var(--border)' : 'none',
+                borderRadius: '8px',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: '600',
+                padding: '0.4rem 0.875rem',
+                transition: 'opacity 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              {showAddForm ? '✕ Cancel' : '+ Add chore'}
+            </button>
           </div>
 
-          {/* Add chore button */}
-          <button
-            onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
-            style={{
-              background: showAddForm ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #a855f7, #ec4899)',
-              border: showAddForm ? '1px solid var(--border)' : 'none',
-              borderRadius: '8px',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              fontWeight: '600',
-              padding: '0.4rem 0.875rem',
-              transition: 'opacity 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            {showAddForm ? '✕ Cancel' : '+ Add chore'}
-          </button>
-        </div>
+          {/* Add chore form */}
+          {showAddForm && (
+            <div className="card" style={{ marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '1rem' }}>New chore</h3>
+              <form onSubmit={handleAddChore} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    What needs doing?
+                  </label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={e => setNewTitle(e.target.value)}
+                    className="input-dark"
+                    placeholder="Vacuum the living room"
+                    maxLength={100}
+                    required
+                    autoFocus
+                  />
+                </div>
 
-        {/* Add chore form */}
-        {showAddForm && (
-          <div className="card" style={{ marginBottom: '1rem' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '1rem' }}>New chore</h3>
-            <form onSubmit={handleAddChore} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  What needs doing?
-                </label>
-                <input
-                  type="text"
-                  value={newTitle}
-                  onChange={e => setNewTitle(e.target.value)}
-                  className="input-dark"
-                  placeholder="Vacuum the living room"
-                  maxLength={100}
-                  required
-                  autoFocus
-                />
-              </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Extra notes (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newDesc}
+                    onChange={e => setNewDesc(e.target.value)}
+                    className="input-dark"
+                    placeholder="Under the couch too"
+                    maxLength={200}
+                  />
+                </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Extra notes (optional)
-                </label>
-                <input
-                  type="text"
-                  value={newDesc}
-                  onChange={e => setNewDesc(e.target.value)}
-                  className="input-dark"
-                  placeholder="Under the couch too"
-                  maxLength={200}
-                />
-              </div>
-
-              {/* Date field */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Date
-                </label>
-                <div style={{ position: 'relative' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Date
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setShowDatePicker(s => !s)}
+                    onClick={() => setShowDatePicker(true)}
                     style={{
                       width: '100%',
                       background: 'rgba(0,0,0,0.04)',
-                      border: showDatePicker ? '1.5px solid #a855f7' : '1.5px solid #d5cfbf',
+                      border: '1.5px solid #d5cfbf',
                       borderRadius: '10px',
                       color: '#1a1827',
                       fontSize: '0.9rem',
@@ -824,8 +899,7 @@ export default function DashboardPage() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.5rem',
-                      boxShadow: showDatePicker ? '0 0 0 3px rgba(168,85,247,0.12)' : 'none',
-                      transition: 'border-color 0.2s, box-shadow 0.2s',
+                      transition: 'border-color 0.2s',
                     }}
                   >
                     <span>📅</span>
@@ -839,187 +913,812 @@ export default function DashboardPage() {
                     />
                   )}
                 </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Frequency
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                    {([
+                      { value: 'once', label: 'Once' },
+                      { value: 'daily', label: 'Daily' },
+                      { value: 'every-other-day', label: 'Every other day' },
+                      { value: 'weekly', label: 'Weekly' },
+                      { value: 'every-other-week', label: 'Every other week' },
+                      { value: 'monthly', label: 'Every month' },
+                    ] as const).map(({ value, label }) => {
+                      const isSel = newFrequency === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setNewFrequency(value)}
+                          style={{
+                            background: isSel ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'rgba(0,0,0,0.05)',
+                            border: isSel ? 'none' : '1.5px solid #d5cfbf',
+                            borderRadius: '100px',
+                            color: isSel ? 'white' : '#6b6882',
+                            cursor: 'pointer',
+                            fontSize: '0.78rem',
+                            fontWeight: isSel ? '600' : '500',
+                            padding: '0.3rem 0.75rem',
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Assign to
+                  </label>
+                  {/* Trigger button — same style as the date picker */}
+                  <button
+                    type="button"
+                    onClick={() => { setPendingAssigned(newAssigned); setShowAssignPicker(true); }}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(0,0,0,0.04)',
+                      border: '1.5px solid #d5cfbf',
+                      borderRadius: '10px',
+                      color: '#1a1827',
+                      fontSize: '0.9rem',
+                      padding: '0.625rem 0.875rem',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      transition: 'border-color 0.2s',
+                    }}
+                  >
+                    {newAssigned ? (() => {
+                      const idx = household?.members.findIndex(m => m.user_id === newAssigned) ?? 0;
+                      const member = household?.members.find(m => m.user_id === newAssigned);
+                      return (
+                        <>
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: getAvatarGradient(idx >= 0 ? idx : 0), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
+                            {getInitials(member?.display_name ?? '?')}
+                          </div>
+                          <span style={{ fontWeight: '500' }}>
+                            {member?.display_name}{newAssigned === me?.userId ? ' (you)' : ''}
+                          </span>
+                        </>
+                      );
+                    })() : (
+                      <span style={{ color: '#9b95aa' }}>Unassigned — anyone can pick it up</span>
+                    )}
+                    <span style={{ marginLeft: 'auto', color: '#9b95aa', fontSize: '0.7rem' }}>▾</span>
+                  </button>
+
+                  {/* Mobile bottom-sheet popup */}
+                  {showAssignPicker && (
+                    <>
+                      {/* Backdrop */}
+                      <div
+                        onClick={() => setShowAssignPicker(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)' }}
+                      />
+                      {/* Sheet */}
+                      <div style={{
+                        position: 'fixed',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        zIndex: 201,
+                        background: '#141428',
+                        borderRadius: '20px 20px 0 0',
+                        boxShadow: '0 -8px 40px rgba(0,0,0,0.6)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                      }}>
+                        {/* Drag handle */}
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0 0.25rem' }}>
+                          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: '#3d3d5a' }} />
+                        </div>
+
+                        {/* Header */}
+                        <div style={{ padding: '0.5rem 1.25rem 0.75rem', borderBottom: '1px solid #2d2d4a' }}>
+                          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#f1f1f8' }}>Assign to</h3>
+                        </div>
+
+                        {/* Options list */}
+                        <div style={{ padding: '0.5rem', overflowY: 'auto', maxHeight: '45vh' }}>
+                          {/* Unassigned */}
+                          <button
+                            type="button"
+                            onClick={() => setPendingAssigned('')}
+                            style={{
+                              width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                              padding: '0.75rem 0.625rem',
+                              background: pendingAssigned === '' ? 'rgba(168,85,247,0.15)' : 'transparent',
+                              border: 'none', borderRadius: '10px',
+                              color: pendingAssigned === '' ? '#a855f7' : '#8b8ba8',
+                              cursor: 'pointer', fontSize: '0.95rem',
+                              fontWeight: pendingAssigned === '' ? '600' : '400',
+                              textAlign: 'left', transition: 'background 0.12s',
+                            }}
+                          >
+                            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed #3d3d5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: '#8b8ba8', flexShrink: 0 }}>
+                              —
+                            </div>
+                            <span>Unassigned</span>
+                            {pendingAssigned === '' && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>}
+                          </button>
+
+                          <div style={{ height: '1px', background: '#2d2d4a', margin: '0.25rem 0.625rem 0.25rem' }} />
+
+                          {household?.members.map((m, i) => {
+                            const isActive = pendingAssigned === m.user_id;
+                            return (
+                              <button
+                                key={m.user_id}
+                                type="button"
+                                onClick={() => setPendingAssigned(m.user_id)}
+                                style={{
+                                  width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                  padding: '0.75rem 0.625rem',
+                                  background: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                                  border: 'none', borderRadius: '10px',
+                                  color: isActive ? '#a855f7' : '#f1f1f8',
+                                  cursor: 'pointer', fontSize: '0.95rem',
+                                  fontWeight: isActive ? '600' : '400',
+                                  textAlign: 'left', transition: 'background 0.12s',
+                                }}
+                              >
+                                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getAvatarGradient(i), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
+                                  {getInitials(m.display_name)}
+                                </div>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
+                                </span>
+                                {isActive && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Footer — Cancel + Done */}
+                        <div style={{ padding: '0.75rem 1.25rem 2rem', borderTop: '1px solid #2d2d4a', display: 'flex', gap: '0.75rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowAssignPicker(false)}
+                            style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.06)', border: '1.5px solid #2d2d4a', borderRadius: '12px', color: '#8b8ba8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setNewAssigned(pendingAssigned); setShowAssignPicker(false); }}
+                            style={{ flex: 1, padding: '0.75rem', background: 'linear-gradient(135deg, #a855f7, #ec4899)', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {addError && <div className="msg-error">{addError}</div>}
+
+                <button type="submit" className="btn-primary" disabled={adding}>
+                  {adding ? 'Adding…' : 'Add chore'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* ── TODAY tab ── */}
+          {activeTab === 'today' && (
+            <>
+              {/* Progress card */}
+              <div className="card" style={{ marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+                  <div>
+                    <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '0.125rem' }}>Today&apos;s progress</h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      {completedToday} of {totalToday} {totalToday === 1 ? 'chore' : 'chores'} done
+                    </p>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '1.75rem',
+                      fontWeight: '800',
+                      background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    }}
+                  >
+                    {progressPct}%
+                  </div>
+                </div>
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+                </div>
+                {totalToday === 0 && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.75rem', textAlign: 'center' }}>
+                    Add chores for today to start tracking progress!
+                  </p>
+                )}
+                {progressPct === 100 && totalToday > 0 && (
+                  <p style={{ color: '#0d7d72', fontSize: '0.85rem', marginTop: '0.75rem', textAlign: 'center', fontWeight: '600' }}>
+                    🎉 All done for today — great work everyone!
+                  </p>
+                )}
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Assign to
-                </label>
-                <select
-                  value={newAssigned}
-                  onChange={e => setNewAssigned(e.target.value ? Number(e.target.value) : '')}
-                  className="input-dark"
-                  style={{ cursor: 'pointer' }}
-                >
-                  <option value="">Unassigned — anyone can pick it up</option>
-                  {household?.members.map(m => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Member stats */}
+              {memberStats.length > 0 && (
+                <div className="card" style={{ marginBottom: '1.25rem' }}>
+                  <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem' }}>Who&apos;s doing what</h2>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {memberStats.map(m => {
+                      const pct = m.assigned === 0 ? 0 : Math.round((m.done / m.assigned) * 100);
+                      return (
+                        <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                          <div
+                            className="avatar"
+                            style={{ width: '38px', height: '38px', background: getAvatarGradient(m.colorIndex), fontSize: '0.75rem', color: 'white' }}
+                          >
+                            {getInitials(m.display_name)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                              <span style={{ fontWeight: '600', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {m.display_name}
+                                {m.user_id === me?.userId && (
+                                  <span style={{ color: 'var(--text-muted)', fontWeight: '400', marginLeft: '0.375rem', fontSize: '0.8rem' }}>(you)</span>
+                                )}
+                              </span>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', flexShrink: 0, marginLeft: '0.5rem' }}>{m.done}/{m.assigned}</span>
+                            </div>
+                            <div className="progress-bar" style={{ height: '6px' }}>
+                              <div className="progress-fill" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-              {addError && <div className="msg-error">{addError}</div>}
+              {/* Today chore list */}
+              {pendingTodayChores.length === 0 && !showAddForm && doneTodayChores.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: '16px' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>✓</div>
+                  <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>No chores for today</div>
+                  <div style={{ fontSize: '0.85rem' }}>Hit &ldquo;+ Add chore&rdquo; to get started.</div>
+                </div>
+              )}
 
-              <button type="submit" className="btn-primary" disabled={adding}>
-                {adding ? 'Adding…' : 'Add chore'}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* ── TODAY tab ── */}
-        {activeTab === 'today' && (
-          <>
-            {pendingTodayChores.length === 0 && !showAddForm && doneTodayChores.length === 0 && (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '3rem 1rem',
-                  color: 'var(--text-muted)',
-                  border: '2px dashed var(--border)',
-                  borderRadius: '16px',
-                }}
-              >
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>✓</div>
-                <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>No chores for today</div>
-                <div style={{ fontSize: '0.85rem' }}>Hit &ldquo;+ Add chore&rdquo; to get started.</div>
-              </div>
-            )}
-
-            {pendingTodayChores.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1.5rem' }}>
-                {pendingTodayChores.map(chore => (
-                  <ChoreCard
-                    key={chore.id}
-                    chore={chore}
-                    members={household?.members ?? []}
-                    currentUserId={me?.userId ?? 0}
-                    onComplete={() => handleComplete(chore.id, false)}
-                    onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
-                    onDelete={() => handleDelete(chore.id)}
-                  />
-                ))}
-              </div>
-            )}
-
-            {doneTodayChores.length > 0 && (
-              <div>
-                <h3
-                  style={{
-                    fontSize: '0.85rem',
-                    fontWeight: '600',
-                    color: 'var(--text-muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginBottom: '0.75rem',
-                  }}
-                >
-                  Done ({doneTodayChores.length})
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {doneTodayChores.map(chore => (
+              {pendingTodayChores.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '1.5rem' }}>
+                  {pendingTodayChores.map(chore => (
                     <ChoreCard
                       key={chore.id}
                       chore={chore}
                       members={household?.members ?? []}
                       currentUserId={me?.userId ?? 0}
-                      onComplete={() => handleComplete(chore.id, true)}
+                      onComplete={() => handleComplete(chore.id, false)}
                       onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
                       onDelete={() => handleDelete(chore.id)}
                     />
                   ))}
                 </div>
+              )}
+
+              {doneTodayChores.length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
+                    Done ({doneTodayChores.length})
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {doneTodayChores.map(chore => (
+                      <ChoreCard
+                        key={chore.id}
+                        chore={chore}
+                        members={household?.members ?? []}
+                        currentUserId={me?.userId ?? 0}
+                        onComplete={() => handleComplete(chore.id, true)}
+                        onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
+                        onDelete={() => handleDelete(chore.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── UPCOMING tab ── */}
+          {activeTab === 'upcoming' && (
+            <>
+              {upcomingGroups.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: '16px' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📅</div>
+                  <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>No upcoming chores</div>
+                  <div style={{ fontSize: '0.85rem' }}>Pick a future date when adding a chore to schedule it here.</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+                  {upcomingGroups.map(({ dateStr, chores: groupChores }) => {
+                    const pending = groupChores.filter(c => !c.is_complete);
+                    const done = groupChores.filter(c => c.is_complete);
+                    return (
+                      <div key={dateStr}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.625rem' }}>
+                          <h3 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                            {formatGroupDate(dateStr)}
+                          </h3>
+                          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{pending.length} pending</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {pending.map(chore => (
+                            <ChoreCard
+                              key={chore.id}
+                              chore={chore}
+                              members={household?.members ?? []}
+                              currentUserId={me?.userId ?? 0}
+                              onComplete={() => handleComplete(chore.id, false)}
+                              onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
+                              onDelete={() => handleDelete(chore.id)}
+                            />
+                          ))}
+                          {done.map(chore => (
+                            <ChoreCard
+                              key={chore.id}
+                              chore={chore}
+                              members={household?.members ?? []}
+                              currentUserId={me?.userId ?? 0}
+                              onComplete={() => handleComplete(chore.id, true)}
+                              onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
+                              onDelete={() => handleDelete(chore.id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══ BULLETIN BOARD VIEW ══════════════════════════════════════════════ */}
+      {activeView === 'bulletin' && (
+        <div
+          style={{
+            height: `calc(100vh - ${HEADER_H}px - ${NAV_H}px)`,
+            display: 'flex',
+            flexDirection: 'column',
+            maxWidth: '700px',
+            margin: '0 auto',
+          }}
+        >
+          {/* Members strip */}
+          <div
+            style={{
+              flexShrink: 0,
+              borderBottom: '1px solid var(--border)',
+              padding: '0.875rem 1.25rem',
+              background: 'rgba(17,17,32,0.6)',
+            }}
+          >
+            <p style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.625rem' }}>
+              {getMembersLabel(household?.members ?? [])}
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '2px' }}>
+              {(household?.members ?? []).slice(0, 6).map((m, i) => (
+                <div key={m.user_id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                  <div
+                    className="avatar"
+                    style={{
+                      width: '48px',
+                      height: '48px',
+                      background: getAvatarGradient(i),
+                      fontSize: '0.9rem',
+                      color: 'white',
+                      border: m.user_id === me?.userId ? '2px solid #a855f7' : '2px solid transparent',
+                    }}
+                  >
+                    {getInitials(m.display_name)}
+                  </div>
+                  <span style={{ fontSize: '0.7rem', fontWeight: '500', color: 'var(--text-muted)', maxWidth: '52px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                    {m.user_id === me?.userId ? 'You' : m.display_name.split(' ')[0]}
+                  </span>
+                </div>
+              ))}
+              {(household?.members.length ?? 0) > 6 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                  <div
+                    className="avatar"
+                    style={{ width: '48px', height: '48px', background: 'rgba(255,255,255,0.06)', border: '1.5px solid var(--border)', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)' }}
+                  >
+                    +{(household?.members.length ?? 0) - 6}
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>more</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Messages scrollable area */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1rem 1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+            }}
+          >
+            {loadingMessages && messages.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0', fontSize: '0.85rem' }}>
+                Loading messages…
               </div>
             )}
-          </>
-        )}
 
-        {/* ── UPCOMING tab ── */}
-        {activeTab === 'upcoming' && (
-          <>
-            {upcomingGroups.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '3rem 1rem',
-                  color: 'var(--text-muted)',
-                  border: '2px dashed var(--border)',
-                  borderRadius: '16px',
-                }}
-              >
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📅</div>
-                <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>No upcoming chores</div>
-                <div style={{ fontSize: '0.85rem' }}>
-                  Pick a future date when adding a chore to schedule it here.
-                </div>
+            {!loadingMessages && messages.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '3rem 1rem', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>💬</div>
+                <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>Start the conversation</div>
+                <div style={{ fontSize: '0.85rem' }}>Send a message to your household.</div>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-                {upcomingGroups.map(({ dateStr, chores: groupChores }) => {
-                  const pending = groupChores.filter(c => !c.is_complete);
-                  const done = groupChores.filter(c => c.is_complete);
-                  return (
-                    <div key={dateStr}>
-                      {/* Date group header */}
-                      <div
+            )}
+
+            {messages.map(msg => {
+              const isOwn = msg.user_id === me?.userId;
+              const colorIdx = getMemberColorIndex(msg.user_id);
+              return (
+                <div
+                  key={msg.id}
+                  style={{
+                    display: 'flex',
+                    flexDirection: isOwn ? 'row-reverse' : 'row',
+                    alignItems: 'flex-end',
+                    gap: '0.5rem',
+                    animation: 'fadeIn 0.2s ease',
+                  }}
+                >
+                  {/* Avatar — only for others */}
+                  {!isOwn && (
+                    <div
+                      className="avatar"
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        background: getAvatarGradient(colorIdx),
+                        fontSize: '0.65rem',
+                        color: 'white',
+                        flexShrink: 0,
+                        marginBottom: '1.5rem',
+                      }}
+                    >
+                      {getInitials(msg.display_name)}
+                    </div>
+                  )}
+
+                  <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                    {/* Name + time */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>
+                        {isOwn ? 'You' : msg.display_name}
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', opacity: 0.7 }}>
+                        {formatMessageTime(msg.created_at)}
+                      </span>
+                    </div>
+
+                    {/* Bubble */}
+                    <div
+                      style={{
+                        background: isOwn
+                          ? 'linear-gradient(135deg, rgba(168,85,247,0.25), rgba(236,72,153,0.2))'
+                          : 'rgba(255,255,255,0.06)',
+                        border: isOwn ? '1px solid rgba(168,85,247,0.3)' : '1px solid var(--border)',
+                        borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                        padding: '0.5rem 0.875rem',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.9rem',
+                        lineHeight: '1.45',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {msg.content}
+                    </div>
+
+                    {/* Like + delete row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
+                      <button
+                        onClick={() => handleLikeMessage(msg.id)}
                         style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '0.75rem',
-                          marginBottom: '0.625rem',
+                          gap: '0.25rem',
+                          color: msg.liked_by_me ? '#ec4899' : 'var(--text-muted)',
+                          fontSize: '0.78rem',
+                          fontWeight: '600',
+                          padding: '0.15rem 0.35rem',
+                          borderRadius: '6px',
+                          transition: 'color 0.15s',
                         }}
                       >
-                        <h3
-                          style={{
-                            fontSize: '0.9rem',
-                            fontWeight: '700',
-                            color: 'var(--text-primary)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {formatGroupDate(dateStr)}
-                        </h3>
-                        <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-                          {pending.length} pending
-                        </span>
-                      </div>
+                        <span style={{ fontSize: '0.9rem' }}>{msg.liked_by_me ? '♥' : '♡'}</span>
+                        {msg.like_count > 0 && <span>{msg.like_count}</span>}
+                      </button>
 
-                      {/* Chores for this date */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {pending.map(chore => (
-                          <ChoreCard
-                            key={chore.id}
-                            chore={chore}
-                            members={household?.members ?? []}
-                            currentUserId={me?.userId ?? 0}
-                            onComplete={() => handleComplete(chore.id, false)}
-                            onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
-                            onDelete={() => handleDelete(chore.id)}
-                          />
-                        ))}
-                        {done.map(chore => (
-                          <ChoreCard
-                            key={chore.id}
-                            chore={chore}
-                            members={household?.members ?? []}
-                            currentUserId={me?.userId ?? 0}
-                            onComplete={() => handleComplete(chore.id, true)}
-                            onAssign={assignedTo => handleAssign(chore.id, assignedTo)}
-                            onDelete={() => handleDelete(chore.id)}
-                          />
-                        ))}
-                      </div>
+                      {isOwn && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'var(--text-muted)',
+                            fontSize: '0.75rem',
+                            padding: '0.15rem 0.35rem',
+                            borderRadius: '6px',
+                            opacity: 0.5,
+                            transition: 'opacity 0.15s',
+                          }}
+                          onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '1')}
+                          onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '0.5')}
+                        >
+                          🗑
+                        </button>
+                      )}
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Message input */}
+          <div
+            style={{
+              flexShrink: 0,
+              borderTop: '1px solid var(--border)',
+              padding: '0.75rem 1.25rem',
+              background: 'rgba(17,17,32,0.8)',
+            }}
+          >
+            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={messageInput}
+                onChange={e => setMessageInput(e.target.value)}
+                className="input-dark"
+                placeholder="Send a message…"
+                maxLength={500}
+                style={{ flex: 1 }}
+              />
+              <button
+                type="submit"
+                disabled={!messageInput.trim() || sendingMessage}
+                style={{
+                  background: messageInput.trim() ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'rgba(255,255,255,0.06)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: 'white',
+                  cursor: messageInput.trim() ? 'pointer' : 'default',
+                  fontWeight: '600',
+                  fontSize: '0.85rem',
+                  padding: '0.625rem 1rem',
+                  flexShrink: 0,
+                  transition: 'background 0.2s',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {sendingMessage ? '…' : 'Send'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ SETTINGS VIEW ════════════════════════════════════════════════════ */}
+      {activeView === 'settings' && (
+        <div
+          style={{
+            maxWidth: '700px',
+            margin: '0 auto',
+            padding: `1.5rem 1.25rem calc(${NAV_H}px + 1.5rem)`,
+          }}
+        >
+          {/* Profile card */}
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div
+                className="avatar"
+                style={{ width: '56px', height: '56px', background: getAvatarGradient(getMemberColorIndex(me?.userId ?? 0)), fontSize: '1.1rem', color: 'white', flexShrink: 0 }}
+              >
+                {getInitials(me?.displayName ?? '?')}
               </div>
-            )}
-          </>
-        )}
-      </div>
+              <div>
+                <div style={{ fontWeight: '700', fontSize: '1.05rem' }}>{me?.displayName}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>@{me?.username}</div>
+                {me?.household?.role === 'owner' && (
+                  <span className="badge" style={{ background: 'rgba(168,85,247,0.1)', color: '#7c3aed', border: '1px solid rgba(168,85,247,0.25)', marginTop: '0.3rem', display: 'inline-block' }}>
+                    Owner
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Household card */}
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>🏠</span> {household?.name}
+            </h2>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.5rem' }}>
+                Invite code
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: '1.6rem',
+                    fontWeight: '800',
+                    letterSpacing: '0.25em',
+                    fontFamily: 'monospace',
+                    background: 'linear-gradient(135deg, #a855f7, #14b8a6)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {household?.inviteCode}
+                </span>
+                <button
+                  onClick={copyInviteCode}
+                  style={{
+                    background: copiedInvite ? 'rgba(20,184,166,0.12)' : 'rgba(168,85,247,0.1)',
+                    border: copiedInvite ? '1.5px solid rgba(20,184,166,0.4)' : '1.5px solid rgba(168,85,247,0.35)',
+                    borderRadius: '10px',
+                    color: copiedInvite ? '#0d7d72' : '#7c3aed',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: '600',
+                    padding: '0.4rem 0.9rem',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {copiedInvite ? '✓ Copied!' : 'Copy code'}
+                </button>
+              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.4rem' }}>
+                Share this with housemates so they can join
+              </p>
+            </div>
+
+            {/* Members list */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.875rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.625rem' }}>
+                Members ({household?.members.length ?? 0})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {household?.members.map((m, i) => (
+                  <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                    <div className="avatar" style={{ width: '32px', height: '32px', background: getAvatarGradient(i), fontSize: '0.65rem', color: 'white' }}>
+                      {getInitials(m.display_name)}
+                    </div>
+                    <span style={{ fontSize: '0.9rem', fontWeight: '500' }}>
+                      {m.display_name}
+                      {m.user_id === me?.userId && <span style={{ color: 'var(--text-muted)', fontWeight: '400', marginLeft: '0.3rem' }}>(you)</span>}
+                    </span>
+                    {m.role === 'owner' && (
+                      <span className="badge" style={{ background: 'rgba(168,85,247,0.08)', color: '#7c3aed', border: '1px solid rgba(168,85,247,0.2)', marginLeft: 'auto' }}>
+                        Owner
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Sign out */}
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              background: 'rgba(239,68,68,0.08)',
+              border: '1.5px solid rgba(239,68,68,0.25)',
+              borderRadius: '12px',
+              color: '#ef4444',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              transition: 'background 0.2s',
+            }}
+            onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.14)')}
+            onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)')}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      )}
+
+      {/* ══ BOTTOM NAVBAR ════════════════════════════════════════════════════ */}
+      <nav
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: `${NAV_H}px`,
+          background: 'rgba(11,11,22,0.97)',
+          backdropFilter: 'blur(16px)',
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'stretch',
+          zIndex: 50,
+        }}
+      >
+        {(
+          [
+            { key: 'chores', label: 'Chores', Icon: IconChores },
+            { key: 'bulletin', label: 'Board', Icon: IconBoard },
+            { key: 'settings', label: 'Settings', Icon: IconSettings },
+          ] as const
+        ).map(({ key, label, Icon }) => {
+          const isActive = activeView === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setActiveView(key)}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.2rem',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: isActive ? '#a855f7' : 'var(--text-muted)',
+                transition: 'color 0.2s',
+                padding: '0.5rem 0',
+              }}
+            >
+              <Icon active={isActive} />
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: isActive ? '700' : '500',
+                  letterSpacing: '0.01em',
+                  color: isActive ? '#a855f7' : 'var(--text-muted)',
+                }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
     </main>
   );
 }
@@ -1043,7 +1742,7 @@ function ChoreCard({
 }) {
   const [showAssign, setShowAssign] = useState(false);
 
-  const cardAvatarColors = [
+  const CARD_COLORS = [
     ['#a855f7', '#ec4899'],
     ['#14b8a6', '#6366f1'],
     ['#f59e0b', '#ec4899'],
@@ -1052,8 +1751,8 @@ function ChoreCard({
     ['#14b8a6', '#a855f7'],
   ];
 
-  function cardGetAvatarGradient(index: number): string {
-    const [a, b] = cardAvatarColors[index % cardAvatarColors.length];
+  function cardGradient(index: number): string {
+    const [a, b] = CARD_COLORS[index % CARD_COLORS.length];
     return `linear-gradient(135deg, ${a}, ${b})`;
   }
 
@@ -1068,9 +1767,10 @@ function ChoreCard({
         gap: '0.75rem',
         opacity: chore.is_complete ? 0.65 : 1,
         transition: 'opacity 0.2s',
+        position: 'relative',
+        zIndex: showAssign ? 200 : undefined,
       }}
     >
-      {/* Complete toggle */}
       <button
         onClick={onComplete}
         style={{
@@ -1095,7 +1795,6 @@ function ChoreCard({
         {chore.is_complete ? '✓' : ''}
       </button>
 
-      {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
           <span
@@ -1139,94 +1838,173 @@ function ChoreCard({
           </p>
         )}
 
-        {/* Assignment row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-          {chore.assigned_to ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <div
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            {chore.assigned_to ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: cardGradient(assignedMemberIndex >= 0 ? assignedMemberIndex : 0),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.55rem',
+                    fontWeight: '700',
+                    color: 'white',
+                  }}
+                >
+                  {chore.assigned_display_name?.[0]?.toUpperCase() ?? '?'}
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {chore.assigned_to === currentUserId ? 'You' : chore.assigned_display_name}
+                </span>
+              </div>
+            ) : (
+              <span className="badge" style={{ background: 'rgba(180,83,9,0.08)', color: '#92400e', border: '1px solid rgba(180,83,9,0.2)' }}>
+                Unassigned
+              </span>
+            )}
+
+            {!chore.is_complete && (
+              <button
+                onClick={() => setShowAssign(s => !s)}
                 style={{
-                  width: '18px',
-                  height: '18px',
-                  borderRadius: '50%',
-                  background: cardGetAvatarGradient(assignedMemberIndex >= 0 ? assignedMemberIndex : 0),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.55rem',
-                  fontWeight: '700',
-                  color: 'white',
+                  background: 'none',
+                  border: '1px solid var(--border)',
+                  borderRadius: '6px',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  padding: '0.15rem 0.5rem',
+                  transition: 'border-color 0.2s, color 0.2s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#a855f7';
+                  (e.currentTarget as HTMLButtonElement).style.color = '#a855f7';
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
                 }}
               >
-                {chore.assigned_display_name?.[0]?.toUpperCase() ?? '?'}
-              </div>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                {chore.assigned_to === currentUserId ? 'You' : chore.assigned_display_name}
+                {showAssign ? 'Cancel' : 'Reassign'}
+              </button>
+            )}
+
+            {chore.is_complete && chore.completed_by_name && (
+              <span style={{ fontSize: '0.78rem', color: '#0d7d72', fontWeight: '500' }}>
+                ✓ Done by {chore.completed_by === currentUserId ? 'you' : chore.completed_by_name}
               </span>
-            </div>
-          ) : (
-            <span
-              className="badge"
-              style={{ background: 'rgba(180,83,9,0.08)', color: '#92400e', border: '1px solid rgba(180,83,9,0.2)' }}
-            >
-              Unassigned
-            </span>
-          )}
+            )}
+          </div>
 
-          {!chore.is_complete && (
-            <button
-              onClick={() => setShowAssign(s => !s)}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                padding: '0.15rem 0.5rem',
-                transition: 'border-color 0.2s, color 0.2s',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = '#a855f7';
-                (e.currentTarget as HTMLButtonElement).style.color = '#a855f7';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
-              }}
-            >
-              {showAssign ? 'Cancel' : 'Reassign'}
-            </button>
-          )}
+          {/* Calendar-style assign popup */}
+          {showAssign && (
+            <>
+              <div onClick={() => setShowAssign(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  left: 0,
+                  zIndex: 100,
+                  background: '#141428',
+                  border: '1px solid #2d2d4a',
+                  borderRadius: '14px',
+                  padding: '0.5rem',
+                  minWidth: '210px',
+                  boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                  overflow: 'hidden',
+                }}
+              >
+                {/* Unassign option */}
+                <button
+                  type="button"
+                  onClick={() => { onAssign(null); setShowAssign(false); }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.625rem',
+                    padding: '0.5rem 0.625rem',
+                    background: !chore.assigned_to ? 'rgba(168,85,247,0.15)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: !chore.assigned_to ? '#a855f7' : '#8b8ba8',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: !chore.assigned_to ? '600' : '400',
+                    textAlign: 'left',
+                    transition: 'background 0.12s',
+                    marginBottom: '0.25rem',
+                  }}
+                  onMouseEnter={e => { if (chore.assigned_to) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; }}
+                  onMouseLeave={e => { if (chore.assigned_to) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                >
+                  <div style={{
+                    width: '28px', height: '28px', borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.06)', border: '1.5px dashed #3d3d5a',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.8rem', color: '#8b8ba8', flexShrink: 0,
+                  }}>
+                    —
+                  </div>
+                  <span>Unassigned</span>
+                  {!chore.assigned_to && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#a855f7' }}>✓</span>}
+                </button>
 
-          {chore.is_complete && chore.completed_by_name && (
-            <span style={{ fontSize: '0.78rem', color: '#0d7d72', fontWeight: '500' }}>
-              ✓ Done by {chore.completed_by === currentUserId ? 'you' : chore.completed_by_name}
-            </span>
+                {/* Divider */}
+                <div style={{ height: '1px', background: '#2d2d4a', margin: '0.25rem 0.625rem 0.5rem' }} />
+
+                {/* Member options */}
+                {members.map((m, i) => {
+                  const isActive = chore.assigned_to === m.user_id;
+                  return (
+                    <button
+                      key={m.user_id}
+                      type="button"
+                      onClick={() => { onAssign(m.user_id); setShowAssign(false); }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.625rem',
+                        padding: '0.5rem 0.625rem',
+                        background: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                        border: 'none',
+                        borderRadius: '8px',
+                        color: isActive ? '#a855f7' : '#f1f1f8',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: isActive ? '600' : '400',
+                        textAlign: 'left',
+                        transition: 'background 0.12s',
+                      }}
+                      onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; }}
+                      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                    >
+                      <div style={{
+                        width: '28px', height: '28px', borderRadius: '50%',
+                        background: cardGradient(i),
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.65rem', fontWeight: '700', color: 'white', flexShrink: 0,
+                      }}>
+                        {getInitials(m.display_name)}
+                      </div>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}
+                      </span>
+                      {isActive && <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#a855f7', flexShrink: 0 }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
-
-        {/* Reassign dropdown */}
-        {showAssign && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <select
-              defaultValue={chore.assigned_to ?? ''}
-              onChange={e => {
-                const val = e.target.value ? Number(e.target.value) : null;
-                onAssign(val);
-                setShowAssign(false);
-              }}
-              className="input-dark"
-              style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', cursor: 'pointer' }}
-            >
-              <option value="">Remove assignment</option>
-              {members.map(m => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
     </div>
   );
