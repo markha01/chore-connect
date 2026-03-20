@@ -15,6 +15,7 @@ interface ChoreRow {
   completed_at: string | null;
   completed_by: number | null;
   completed_by_name: string | null;
+  due_date: string | null;
 }
 
 export async function GET(req: NextRequest) {
@@ -49,13 +50,14 @@ export async function GET(req: NextRequest) {
          c.created_at,
          c.completed_at,
          c.completed_by,
-         du.display_name as completed_by_name
+         du.display_name as completed_by_name,
+         c.due_date::text as due_date
        FROM chores c
        LEFT JOIN users au ON au.id = c.assigned_to
        LEFT JOIN users cu ON cu.id = c.created_by
        LEFT JOIN users du ON du.id = c.completed_by
        WHERE c.household_id = $1
-       ORDER BY c.is_complete ASC, c.created_at DESC`,
+       ORDER BY c.is_complete ASC, c.due_date ASC NULLS FIRST, c.created_at DESC`,
       [household.id]
     );
 
@@ -74,10 +76,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, description, assignedTo } = body as {
+    const { title, description, assignedTo, dueDate } = body as {
       title?: string;
       description?: string;
       assignedTo?: number | null;
+      dueDate?: string;
     };
 
     if (!title || title.trim().length < 2) {
@@ -119,9 +122,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const dueDateVal = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : null;
+
     const rows = await query<{ id: number }>(
-      `INSERT INTO chores (household_id, title, description, assigned_to, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO chores (household_id, title, description, assigned_to, created_by, due_date)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id`,
       [
         household.id,
@@ -129,6 +134,7 @@ export async function POST(req: NextRequest) {
         description?.trim() || null,
         assignedTo || null,
         session.userId,
+        dueDateVal,
       ]
     );
 
