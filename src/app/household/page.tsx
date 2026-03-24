@@ -57,7 +57,7 @@ export default function HouseholdPage() {
               width: '100%',
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = '#a855f7';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#BC9BF3';
               (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
             }}
             onMouseLeave={(e) => {

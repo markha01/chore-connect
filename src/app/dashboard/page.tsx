@@ -10,6 +10,7 @@ interface Member {
   display_name: string;
   username: string;
   role: string;
+  avatar_url?: string | null;
 }
 
 interface Household {
@@ -40,6 +41,7 @@ interface Me {
   userId: number;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
   household: { id: number; name: string; inviteCode: string; role: string } | null;
 }
 
@@ -51,6 +53,7 @@ interface Message {
   created_at: string;
   like_count: number;
   liked_by_me: boolean;
+  is_edited: boolean;
 }
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
@@ -126,12 +129,12 @@ function formatMessageTime(createdAt: string): string {
 // ── Avatar helpers ─────────────────────────────────────────────────────────────
 
 const AVATAR_COLORS = [
-  ['#a855f7', '#ec4899'],
+  ['#BC9BF3', '#ec4899'],
   ['#14b8a6', '#6366f1'],
   ['#f59e0b', '#ec4899'],
   ['#6366f1', '#14b8a6'],
   ['#ec4899', '#f59e0b'],
-  ['#14b8a6', '#a855f7'],
+  ['#14b8a6', '#BC9BF3'],
 ];
 
 function getAvatarGradient(_index: number): string {
@@ -298,7 +301,7 @@ function DatePickerCalendar({
           <span style={{ fontSize: '1rem' }}>⭐</span>
           <span>Today</span>
           {isPendingToday && (
-            <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>
+            <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem' }}>✓</span>
           )}
         </button>
 
@@ -357,7 +360,7 @@ function DatePickerCalendar({
                     background: isSelected
                       ? '#8DB654'
                       : 'transparent',
-                    color: isSelected ? 'white' : isToday ? '#a855f7' : '#d4d4e8',
+                    color: isSelected ? 'white' : isToday ? '#BC9BF3' : '#d4d4e8',
                     cursor: 'pointer',
                     fontSize: '0.88rem',
                     fontWeight: isSelected || isToday ? '700' : '400',
@@ -367,11 +370,11 @@ function DatePickerCalendar({
                     transition: 'background 0.12s, transform 0.1s',
                     position: 'relative',
                   }}
-                  onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(168,85,247,0.18)'; }}
+                  onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(188,155,243,0.18)'; }}
                   onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
                 >
                   {isToday && !isSelected && (
-                    <span style={{ position: 'absolute', bottom: '3px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', borderRadius: '50%', background: '#a855f7' }} />
+                    <span style={{ position: 'absolute', bottom: '3px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', borderRadius: '50%', background: '#BC9BF3' }} />
                   )}
                   {d}
                 </button>
@@ -412,7 +415,7 @@ function DatePickerCalendar({
 // ── Nav icons ──────────────────────────────────────────────────────────────────
 
 function IconChores({ active }: { active: boolean }) {
-  const color = active ? '#a855f7' : '#8b8ba8';
+  const color = active ? '#BC9BF3' : '#8b8ba8';
   return (
     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
@@ -423,7 +426,7 @@ function IconChores({ active }: { active: boolean }) {
 }
 
 function IconBoard({ active }: { active: boolean }) {
-  const color = active ? '#a855f7' : '#8b8ba8';
+  const color = active ? '#BC9BF3' : '#8b8ba8';
   return (
     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
@@ -432,7 +435,7 @@ function IconBoard({ active }: { active: boolean }) {
 }
 
 function IconSettings({ active }: { active: boolean }) {
-  const color = active ? '#a855f7' : '#8b8ba8';
+  const color = active ? '#BC9BF3' : '#8b8ba8';
   return (
     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3" />
@@ -480,6 +483,17 @@ export default function DashboardPage() {
   // Settings
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [displayNameInput, setDisplayNameInput] = useState('');
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [editingHouseholdName, setEditingHouseholdName] = useState(false);
+  const [householdNameInput, setHouseholdNameInput] = useState('');
+  const [savingHouseholdName, setSavingHouseholdName] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showMoveOutConfirm, setShowMoveOutConfirm] = useState(false);
+  const [leavingHousehold, setLeavingHousehold] = useState(false);
+  const [moveOutError, setMoveOutError] = useState('');
 
   // Bulletin board
   const [messages, setMessages] = useState<Message[]>([]);
@@ -487,6 +501,11 @@ export default function DashboardPage() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [contextMenuMsgId, setContextMenuMsgId] = useState<number | null>(null);
+  const [isClosingContextMenu, setIsClosingContextMenu] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -665,10 +684,122 @@ export default function DashboardPage() {
     });
   }
 
+  function copyInviteLink() {
+    if (!household) return;
+    const link = `${window.location.origin}/household/join?code=${household.inviteCode}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2500);
+    });
+  }
+
+  function compressImage(file: File, maxSize: number, quality: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('No canvas context')); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const dataUrl = await compressImage(file, 120, 0.75);
+      const res = await fetch('/api/auth/me', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarUrl: dataUrl }),
+      });
+      if (res.ok) await fetchAll();
+    } catch { /* silent */ } finally {
+      setUploadingAvatar(false);
+      e.target.value = '';
+    }
+  }
+
+  async function handleSaveDisplayName(e: FormEvent) {
+    e.preventDefault();
+    const name = displayNameInput.trim();
+    if (!name || savingDisplayName) return;
+    setSavingDisplayName(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: name }),
+      });
+      if (res.ok) {
+        setEditingDisplayName(false);
+        await fetchAll();
+      }
+    } catch { /* silent */ } finally {
+      setSavingDisplayName(false);
+    }
+  }
+
+  async function handleSaveHouseholdName(e: FormEvent) {
+    e.preventDefault();
+    const name = householdNameInput.trim();
+    if (!name || savingHouseholdName) return;
+    setSavingHouseholdName(true);
+    try {
+      const res = await fetch('/api/household', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        setEditingHouseholdName(false);
+        await fetchAll();
+      }
+    } catch { /* silent */ } finally {
+      setSavingHouseholdName(false);
+    }
+  }
+
+  async function handleMoveOut() {
+    if (leavingHousehold) return;
+    setLeavingHousehold(true);
+    setMoveOutError('');
+    try {
+      const res = await fetch('/api/household/leave', { method: 'POST' });
+      if (res.ok) {
+        router.push('/household');
+        router.refresh();
+      } else {
+        const data = await res.json();
+        setMoveOutError(data.error ?? 'Something went wrong.');
+        setLeavingHousehold(false);
+      }
+    } catch {
+      setMoveOutError('Something went wrong.');
+      setLeavingHousehold(false);
+    }
+  }
+
   async function handleSendMessage(e: FormEvent) {
     e.preventDefault();
     const content = messageInput.trim();
     if (!content || sendingMessage) return;
+
+    if (editingMsgId !== null) {
+      await handleEditMessage(editingMsgId, content);
+      return;
+    }
 
     setSendingMessage(true);
     try {
@@ -707,13 +838,53 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteMessage(messageId: number) {
-    if (!confirm('Delete this message?')) return;
+    setContextMenuMsgId(null);
     try {
       const res = await fetch(`/api/messages/${messageId}`, { method: 'DELETE' });
       if (res.ok) {
         setMessages(prev => prev.filter(m => m.id !== messageId));
       }
     } catch { /* silent */ }
+  }
+
+  function closeContextMenu() {
+    setIsClosingContextMenu(true);
+    setTimeout(() => { setContextMenuMsgId(null); setIsClosingContextMenu(false); }, 200);
+  }
+
+  function startLongPress(msgId: number) {
+    longPressTimer.current = setTimeout(() => {
+      setContextMenuMsgId(msgId);
+    }, 500);
+  }
+
+  function cancelLongPress() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  async function handleEditMessage(messageId: number, newContent: string) {
+    const trimmed = newContent.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch(`/api/messages/${messageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: trimmed }),
+      });
+      if (res.ok) {
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content: trimmed, is_edited: true } : m));
+        setEditingMsgId(null);
+        setMessageInput('');
+      }
+    } catch { /* silent */ }
+  }
+
+  function cancelEdit() {
+    setEditingMsgId(null);
+    setMessageInput('');
   }
 
   // ── Derived data ───────────────────────────────────────────────────────────
@@ -896,7 +1067,7 @@ export default function DashboardPage() {
           {/* FAB — Add chore (bottom-right, fixed, hidden on history tab) */}
           {activeTab !== 'history' && (
             <button
-              onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
+              onClick={() => router.push('/dashboard/chores/new')}
               style={{
                 position: 'fixed',
                 bottom: `${NAV_H + 20}px`,
@@ -904,8 +1075,8 @@ export default function DashboardPage() {
                 width: '56px',
                 height: '56px',
                 borderRadius: '50%',
-                background: showAddForm ? 'rgba(60,60,80,0.95)' : '#8DB654',
-                border: showAddForm ? '1.5px solid var(--border)' : 'none',
+                background: '#8DB654',
+                border: 'none',
                 color: 'white',
                 cursor: 'pointer',
                 display: 'flex',
@@ -913,27 +1084,20 @@ export default function DashboardPage() {
                 justifyContent: 'center',
                 boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
                 zIndex: 40,
-                transition: 'background 0.2s, transform 0.15s',
+                transition: 'transform 0.15s',
               }}
               onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.08)')}
               onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
-              aria-label={showAddForm ? 'Cancel' : 'Add chore'}
+              aria-label="Add chore"
             >
-              {showAddForm ? (
-                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <line x1="3" y1="3" x2="19" y2="19" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                  <line x1="19" y1="3" x2="3" y2="19" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                </svg>
-              ) : (
-                <svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <line x1="13" y1="3" x2="13" y2="23" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                  <line x1="3" y1="13" x2="23" y2="13" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                </svg>
-              )}
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <line x1="13" y1="3" x2="13" y2="23" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                <line x1="3" y1="13" x2="23" y2="13" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+              </svg>
             </button>
           )}
 
-          {/* Add chore form */}
+          {/* Add chore form — replaced by /dashboard/chores/new page */}
           {showAddForm && (
             <div className="card" style={{ marginBottom: '1rem' }}>
               <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '1rem' }}>New chore</h3>
@@ -1128,9 +1292,9 @@ export default function DashboardPage() {
                             style={{
                               width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
                               padding: '0.75rem 0.625rem',
-                              background: pendingAssigned === '' ? 'rgba(168,85,247,0.15)' : 'transparent',
+                              background: pendingAssigned === '' ? 'rgba(188,155,243,0.15)' : 'transparent',
                               border: 'none', borderRadius: '10px',
-                              color: pendingAssigned === '' ? '#a855f7' : '#8b8ba8',
+                              color: pendingAssigned === '' ? '#BC9BF3' : '#8b8ba8',
                               cursor: 'pointer', fontSize: '0.95rem',
                               fontWeight: pendingAssigned === '' ? '600' : '400',
                               textAlign: 'left', transition: 'background 0.12s',
@@ -1140,7 +1304,7 @@ export default function DashboardPage() {
                               —
                             </div>
                             <span>Unassigned</span>
-                            {pendingAssigned === '' && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>}
+                            {pendingAssigned === '' && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem' }}>✓</span>}
                           </button>
 
                           <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.625rem' }} />
@@ -1155,9 +1319,9 @@ export default function DashboardPage() {
                                 style={{
                                   width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
                                   padding: '0.75rem 0.625rem',
-                                  background: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                                  background: isActive ? 'rgba(188,155,243,0.15)' : 'transparent',
                                   border: 'none', borderRadius: '10px',
-                                  color: isActive ? '#a855f7' : '#f1f1f8',
+                                  color: isActive ? '#BC9BF3' : '#f1f1f8',
                                   cursor: 'pointer', fontSize: '0.95rem',
                                   fontWeight: isActive ? '600' : '400',
                                   textAlign: 'left', transition: 'background 0.12s',
@@ -1169,7 +1333,7 @@ export default function DashboardPage() {
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
                                 </span>
-                                {isActive && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
+                                {isActive && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
                               </button>
                             );
                           })}
@@ -1270,7 +1434,7 @@ export default function DashboardPage() {
 
               {doneTodayChores.length > 0 && pendingTodayChores.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '1.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  All done for today — check the <button onClick={() => setActiveTab('history')} style={{ background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', padding: 0 }}>History</button> tab to see completed chores.
+                  All done for today — check the <button onClick={() => setActiveTab('history')} style={{ background: 'none', border: 'none', color: '#BC9BF3', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', padding: 0 }}>History</button> tab to see completed chores.
                 </div>
               )}
             </>
@@ -1526,7 +1690,7 @@ export default function DashboardPage() {
                       background: getAvatarGradient(i),
                       fontSize: '0.9rem',
                       color: 'white',
-                      border: m.user_id === me?.userId ? '2px solid #a855f7' : '2px solid transparent',
+                      border: m.user_id === me?.userId ? '2px solid #BC9BF3' : '2px solid transparent',
                     }}
                   >
                     {getInitials(m.display_name)}
@@ -1620,20 +1784,34 @@ export default function DashboardPage() {
 
                     {/* Bubble */}
                     <div
+                      onMouseDown={() => startLongPress(msg.id)}
+                      onMouseUp={cancelLongPress}
+                      onMouseLeave={cancelLongPress}
+                      onTouchStart={() => startLongPress(msg.id)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchMove={cancelLongPress}
+                      onContextMenu={(e) => { e.preventDefault(); cancelLongPress(); setContextMenuMsgId(msg.id); }}
                       style={{
                         background: isOwn
-                          ? 'rgba(141,182,84,0.25)'
+                          ? 'rgba(115,96,249,0.22)'
                           : 'rgba(255,255,255,0.06)',
-                        border: isOwn ? '1px solid rgba(168,85,247,0.3)' : '1px solid var(--border)',
+                        border: isOwn ? '1px solid rgba(115,96,249,0.35)' : '1px solid var(--border)',
                         borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                         padding: '0.5rem 0.875rem',
                         color: 'var(--text-primary)',
                         fontSize: '0.9rem',
                         lineHeight: '1.45',
                         wordBreak: 'break-word',
+                        userSelect: 'none',
+                        cursor: 'default',
                       }}
                     >
                       {msg.content}
+                      {msg.is_edited && (
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', opacity: 0.5, marginTop: '0.2rem' }}>
+                          Edited
+                        </div>
+                      )}
                     </div>
 
                     {/* Like + delete row */}
@@ -1659,26 +1837,6 @@ export default function DashboardPage() {
                         {msg.like_count > 0 && <span>{msg.like_count}</span>}
                       </button>
 
-                      {isOwn && (
-                        <button
-                          onClick={() => handleDeleteMessage(msg.id)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: 'var(--text-muted)',
-                            fontSize: '0.75rem',
-                            padding: '0.15rem 0.35rem',
-                            borderRadius: '6px',
-                            opacity: 0.5,
-                            transition: 'opacity 0.15s',
-                          }}
-                          onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '1')}
-                          onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '0.5')}
-                        >
-                          🗑
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1687,17 +1845,177 @@ export default function DashboardPage() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Message context menu */}
+          {contextMenuMsgId !== null && (() => {
+            const ctxMsg = messages.find(m => m.id === contextMenuMsgId);
+            if (!ctxMsg) return null;
+            const ctxIsOwn = ctxMsg.user_id === me?.userId;
+            return (
+              <>
+                <div
+                  onClick={closeContextMenu}
+                  style={{
+                    position: 'fixed', inset: 0, zIndex: 200,
+                    background: 'rgba(0,0,0,0.55)',
+                    animation: isClosingContextMenu ? 'backdropFadeOut 0.2s ease-in forwards' : 'backdropFade 0.15s ease',
+                  }}
+                />
+                <div style={{
+                  position: 'fixed',
+                  top: '50%', left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: 201,
+                  background: '#252535',
+                  borderRadius: '18px',
+                  boxShadow: '0 8px 48px rgba(0,0,0,0.7)',
+                  width: 'min(320px, calc(100vw - 2rem))',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  animation: isClosingContextMenu ? 'modalOut 0.18s ease-in forwards' : 'modalIn 0.2s cubic-bezier(0.34, 1.4, 0.64, 1)',
+                }}>
+                  {/* Message preview */}
+                  <div style={{ padding: '1rem 1.25rem 0.875rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {ctxMsg.content}
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ padding: '0.375rem' }}>
+                    {ctxIsOwn && (
+                      <button
+                        onClick={() => {
+                          closeContextMenu();
+                          setEditingMsgId(ctxMsg.id);
+                          setMessageInput(ctxMsg.content);
+                          setTimeout(() => {
+                            messageInputRef.current?.focus();
+                            const len = ctxMsg.content.length;
+                            messageInputRef.current?.setSelectionRange(len, len);
+                          }, 50);
+                        }}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center',
+                          padding: '0.8rem 1rem',
+                          background: 'transparent', border: 'none', borderRadius: '10px',
+                          color: '#f1f1f8', cursor: 'pointer', fontSize: '0.95rem',
+                          textAlign: 'left', transition: 'background 0.12s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        Edit message
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(ctxMsg.content);
+                        closeContextMenu();
+                      }}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center',
+                        padding: '0.8rem 1rem',
+                        background: 'transparent', border: 'none', borderRadius: '10px',
+                        color: '#f1f1f8', cursor: 'pointer', fontSize: '0.95rem',
+                        textAlign: 'left', transition: 'background 0.12s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      Copy message text
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        closeContextMenu();
+                        handleLikeMessage(ctxMsg.id);
+                      }}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center',
+                        padding: '0.8rem 1rem',
+                        background: 'transparent', border: 'none', borderRadius: '10px',
+                        color: '#f1f1f8', cursor: 'pointer', fontSize: '0.95rem',
+                        textAlign: 'left', transition: 'background 0.12s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      {ctxMsg.liked_by_me ? 'Unlike' : 'Like'}
+                    </button>
+
+                    {ctxIsOwn && (
+                      <>
+                        <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.5rem' }} />
+                        <button
+                          onClick={() => handleDeleteMessage(ctxMsg.id)}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center',
+                            padding: '0.8rem 1rem',
+                            background: 'transparent', border: 'none', borderRadius: '10px',
+                            color: '#f87171', cursor: 'pointer', fontSize: '0.95rem',
+                            textAlign: 'left', transition: 'background 0.12s',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(248,113,113,0.08)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+
           {/* Message input */}
           <div
             style={{
               flexShrink: 0,
               borderTop: '1px solid var(--border)',
-              padding: '0.75rem 1.25rem',
               background: 'rgba(17,17,32,0.8)',
             }}
           >
-            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {/* Edit mode banner */}
+            {editingMsgId !== null && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.55rem 1rem 0.45rem',
+                borderBottom: '1px solid rgba(115,96,249,0.2)',
+                background: 'rgba(115,96,249,0.08)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {/* Pencil icon */}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(115,96,249,0.9)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                  <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'rgba(115,96,249,0.9)' }}>
+                    Edit message
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--text-muted)', padding: '0.1rem', display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.75rem 1.25rem' }}>
               <input
+                ref={messageInputRef}
                 type="text"
                 value={messageInput}
                 onChange={e => setMessageInput(e.target.value)}
@@ -1710,7 +2028,7 @@ export default function DashboardPage() {
                 type="submit"
                 disabled={!messageInput.trim() || sendingMessage}
                 style={{
-                  background: messageInput.trim() ? '#8DB654' : 'rgba(255,255,255,0.06)',
+                  background: messageInput.trim() ? (editingMsgId !== null ? '#7360F9' : '#8DB654') : 'rgba(255,255,255,0.06)',
                   border: 'none',
                   borderRadius: '10px',
                   color: 'white',
@@ -1723,7 +2041,7 @@ export default function DashboardPage() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {sendingMessage ? '…' : 'Send'}
+                {sendingMessage ? '…' : editingMsgId !== null ? 'Save' : 'Send'}
               </button>
             </form>
           </div>
@@ -1753,7 +2071,7 @@ export default function DashboardPage() {
                 <div style={{ fontWeight: '700', fontSize: '1.05rem' }}>{me?.displayName}</div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>@{me?.username}</div>
                 {me?.household?.role === 'owner' && (
-                  <span className="badge" style={{ background: 'rgba(168,85,247,0.1)', color: '#7c3aed', border: '1px solid rgba(168,85,247,0.25)', marginTop: '0.3rem', display: 'inline-block' }}>
+                  <span className="badge" style={{ background: 'rgba(188,155,243,0.1)', color: '#7c3aed', border: '1px solid rgba(188,155,243,0.25)', marginTop: '0.3rem', display: 'inline-block' }}>
                     Owner
                   </span>
                 )}
@@ -1787,8 +2105,8 @@ export default function DashboardPage() {
                 <button
                   onClick={copyInviteCode}
                   style={{
-                    background: copiedInvite ? 'rgba(20,184,166,0.12)' : 'rgba(168,85,247,0.1)',
-                    border: copiedInvite ? '1.5px solid rgba(20,184,166,0.4)' : '1.5px solid rgba(168,85,247,0.35)',
+                    background: copiedInvite ? 'rgba(20,184,166,0.12)' : 'rgba(188,155,243,0.1)',
+                    border: copiedInvite ? '1.5px solid rgba(20,184,166,0.4)' : '1.5px solid rgba(188,155,243,0.35)',
                     borderRadius: '10px',
                     color: copiedInvite ? '#0d7d72' : '#7c3aed',
                     cursor: 'pointer',
@@ -1823,7 +2141,7 @@ export default function DashboardPage() {
                       {m.user_id === me?.userId && <span style={{ color: 'var(--text-muted)', fontWeight: '400', marginLeft: '0.3rem' }}>(you)</span>}
                     </span>
                     {m.role === 'owner' && (
-                      <span className="badge" style={{ background: 'rgba(168,85,247,0.08)', color: '#7c3aed', border: '1px solid rgba(168,85,247,0.2)', marginLeft: 'auto' }}>
+                      <span className="badge" style={{ background: 'rgba(188,155,243,0.08)', color: '#7c3aed', border: '1px solid rgba(188,155,243,0.2)', marginLeft: 'auto' }}>
                         Owner
                       </span>
                     )}
@@ -1896,7 +2214,7 @@ export default function DashboardPage() {
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                color: isActive ? '#a855f7' : 'var(--text-muted)',
+                color: isActive ? '#BC9BF3' : 'var(--text-muted)',
                 padding: '0.5rem 0',
               }}
             >
@@ -1906,7 +2224,7 @@ export default function DashboardPage() {
                   fontSize: '0.68rem',
                   fontWeight: isActive ? '700' : '500',
                   letterSpacing: '0.01em',
-                  color: isActive ? '#a855f7' : 'var(--text-muted)',
+                  color: isActive ? '#BC9BF3' : 'var(--text-muted)',
                 }}
               >
                 {label}
@@ -1945,12 +2263,12 @@ function ChoreCard({
   }
 
   const CARD_COLORS = [
-    ['#a855f7', '#ec4899'],
+    ['#BC9BF3', '#ec4899'],
     ['#14b8a6', '#6366f1'],
     ['#f59e0b', '#ec4899'],
     ['#6366f1', '#14b8a6'],
     ['#ec4899', '#f59e0b'],
-    ['#14b8a6', '#a855f7'],
+    ['#14b8a6', '#BC9BF3'],
   ];
 
   function cardGradient(_index: number): string {
@@ -2082,8 +2400,8 @@ function ChoreCard({
                   transition: 'border-color 0.2s, color 0.2s',
                 }}
                 onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#a855f7';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#a855f7';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#BC9BF3';
+                  (e.currentTarget as HTMLButtonElement).style.color = '#BC9BF3';
                 }}
                 onMouseLeave={e => {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
@@ -2169,10 +2487,10 @@ function ChoreCard({
                       alignItems: 'center',
                       gap: '0.75rem',
                       padding: '0.75rem 0.625rem',
-                      background: !chore.assigned_to ? 'rgba(168,85,247,0.15)' : 'transparent',
+                      background: !chore.assigned_to ? 'rgba(188,155,243,0.15)' : 'transparent',
                       border: 'none',
                       borderRadius: '10px',
-                      color: !chore.assigned_to ? '#a855f7' : '#8b8ba8',
+                      color: !chore.assigned_to ? '#BC9BF3' : '#8b8ba8',
                       cursor: 'pointer',
                       fontSize: '0.95rem',
                       fontWeight: !chore.assigned_to ? '600' : '400',
@@ -2192,7 +2510,7 @@ function ChoreCard({
                       —
                     </div>
                     <span>Unassigned</span>
-                    {!chore.assigned_to && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem' }}>✓</span>}
+                    {!chore.assigned_to && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem' }}>✓</span>}
                   </button>
 
                   <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.625rem' }} />
@@ -2211,10 +2529,10 @@ function ChoreCard({
                           alignItems: 'center',
                           gap: '0.75rem',
                           padding: '0.75rem 0.625rem',
-                          background: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                          background: isActive ? 'rgba(188,155,243,0.15)' : 'transparent',
                           border: 'none',
                           borderRadius: '10px',
-                          color: isActive ? '#a855f7' : '#f1f1f8',
+                          color: isActive ? '#BC9BF3' : '#f1f1f8',
                           cursor: 'pointer',
                           fontSize: '0.95rem',
                           fontWeight: isActive ? '600' : '400',
@@ -2235,7 +2553,7 @@ function ChoreCard({
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}
                         </span>
-                        {isActive && <span style={{ marginLeft: 'auto', color: '#a855f7', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
+                        {isActive && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
                       </button>
                     );
                   })}

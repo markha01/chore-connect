@@ -12,6 +12,7 @@ async function ensureTables() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE`);
   await query(`
     CREATE TABLE IF NOT EXISTS message_likes (
       message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -30,6 +31,7 @@ interface MessageRow {
   created_at: string;
   like_count: string;
   liked_by_me: boolean | null;
+  is_edited: boolean;
 }
 
 export async function GET() {
@@ -60,6 +62,7 @@ export async function GET() {
          u.display_name,
          m.content,
          m.created_at,
+         m.is_edited,
          COUNT(ml.user_id)::text AS like_count,
          COALESCE(BOOL_OR(ml.user_id = $2), false) AS liked_by_me
        FROM messages m
@@ -75,6 +78,7 @@ export async function GET() {
       ...r,
       like_count: Number(r.like_count),
       liked_by_me: r.liked_by_me ?? false,
+      is_edited: r.is_edited ?? false,
     }));
 
     return NextResponse.json({ messages });
