@@ -42,11 +42,12 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { action, assignedTo, title, description } = body as {
+    const { action, assignedTo, title, description, dueDate } = body as {
       action?: string;
       assignedTo?: number | null;
       title?: string;
       description?: string;
+      dueDate?: string | null;
     };
 
     if (action === 'complete') {
@@ -86,8 +87,8 @@ export async function PATCH(
         );
       }
       await query(
-        'UPDATE chores SET title = $1, description = $2 WHERE id = $3',
-        [title.trim(), description?.trim() || null, choreId]
+        'UPDATE chores SET title = $1, description = $2, due_date = $3 WHERE id = $4',
+        [title.trim(), description?.trim() || null, dueDate || null, choreId]
       );
     } else {
       return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
