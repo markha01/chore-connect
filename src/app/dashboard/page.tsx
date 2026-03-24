@@ -134,9 +134,8 @@ const AVATAR_COLORS = [
   ['#14b8a6', '#a855f7'],
 ];
 
-function getAvatarGradient(index: number): string {
-  const [a, b] = AVATAR_COLORS[index % AVATAR_COLORS.length];
-  return `linear-gradient(135deg, ${a}, ${b})`;
+function getAvatarGradient(_index: number): string {
+  return '#8DB654';
 }
 
 function getInitials(name: string): string {
@@ -356,7 +355,7 @@ function DatePickerCalendar({
                     borderRadius: '50%',
                     border: 'none',
                     background: isSelected
-                      ? 'linear-gradient(135deg, #a855f7, #ec4899)'
+                      ? '#8DB654'
                       : 'transparent',
                     color: isSelected ? 'white' : isToday ? '#a855f7' : '#d4d4e8',
                     cursor: 'pointer',
@@ -389,7 +388,7 @@ function DatePickerCalendar({
             style={{
               width: '100%',
               padding: '0.8rem',
-              background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+              background: '#8DB654',
               border: 'none',
               borderRadius: '14px',
               color: 'white',
@@ -545,6 +544,8 @@ export default function DashboardPage() {
   useEffect(() => {
     if (activeView === 'bulletin') {
       fetchMessages();
+      const interval = setInterval(fetchMessages, 2000);
+      return () => clearInterval(interval);
     }
   }, [activeView, fetchMessages]);
 
@@ -838,19 +839,11 @@ export default function DashboardPage() {
             animation: 'viewFadeIn 0.22s ease',
           }}
         >
-          {/* Tabs + Add chore — very top */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '1rem',
-              gap: '0.75rem',
-            }}
-          >
+          {/* Tabs — very top */}
+          <div style={{ marginBottom: '1rem' }}>
             <div
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 gap: '0.25rem',
                 background: 'rgba(255,255,255,0.04)',
                 border: '1px solid var(--border)',
@@ -867,7 +860,7 @@ export default function DashboardPage() {
                     key={tab}
                     onClick={() => { setActiveTab(tab); setShowAddForm(false); }}
                     style={{
-                      background: isActive ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
+                      background: isActive ? '#8DB654' : 'transparent',
                       border: 'none',
                       borderRadius: '7px',
                       color: isActive ? 'white' : 'var(--text-muted)',
@@ -898,27 +891,47 @@ export default function DashboardPage() {
                 );
               })}
             </div>
-
-            {activeTab !== 'history' && (
-              <button
-                onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
-                style={{
-                  background: showAddForm ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #a855f7, #ec4899)',
-                  border: showAddForm ? '1px solid var(--border)' : 'none',
-                  borderRadius: '8px',
-                  color: 'white',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  fontWeight: '600',
-                  padding: '0.4rem 0.875rem',
-                  transition: 'opacity 0.2s',
-                  flexShrink: 0,
-                }}
-              >
-                {showAddForm ? '✕ Cancel' : '+ Add chore'}
-              </button>
-            )}
           </div>
+
+          {/* FAB — Add chore (bottom-right, fixed, hidden on history tab) */}
+          {activeTab !== 'history' && (
+            <button
+              onClick={() => { setShowAddForm(s => !s); setAddError(''); }}
+              style={{
+                position: 'fixed',
+                bottom: `${NAV_H + 20}px`,
+                right: '20px',
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: showAddForm ? 'rgba(60,60,80,0.95)' : '#8DB654',
+                border: showAddForm ? '1.5px solid var(--border)' : 'none',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+                zIndex: 40,
+                transition: 'background 0.2s, transform 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.08)')}
+              onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+              aria-label={showAddForm ? 'Cancel' : 'Add chore'}
+            >
+              {showAddForm ? (
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <line x1="3" y1="3" x2="19" y2="19" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                  <line x1="19" y1="3" x2="3" y2="19" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                </svg>
+              ) : (
+                <svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <line x1="13" y1="3" x2="13" y2="23" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                  <line x1="3" y1="13" x2="23" y2="13" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                </svg>
+              )}
+            </button>
+          )}
 
           {/* Add chore form */}
           {showAddForm && (
@@ -1010,7 +1023,7 @@ export default function DashboardPage() {
                           type="button"
                           onClick={() => setNewFrequency(value)}
                           style={{
-                            background: isSel ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'rgba(0,0,0,0.05)',
+                            background: isSel ? '#8DB654' : 'rgba(0,0,0,0.05)',
                             border: isSel ? 'none' : '1.5px solid #d5cfbf',
                             borderRadius: '100px',
                             color: isSel ? 'white' : '#6b6882',
@@ -1174,7 +1187,7 @@ export default function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => { setNewAssigned(pendingAssigned); closeAssignPicker(); }}
-                            style={{ flex: 1, padding: '0.75rem', background: 'linear-gradient(135deg, #a855f7, #ec4899)', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
+                            style={{ flex: 1, padding: '0.75rem', background: '#8DB654', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
                           >
                             Done
                           </button>
@@ -1209,10 +1222,7 @@ export default function DashboardPage() {
                     style={{
                       fontSize: '1.75rem',
                       fontWeight: '800',
-                      background: 'linear-gradient(135deg, #a855f7, #ec4899)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      backgroundClip: 'text',
+                      color: '#8DB654',
                     }}
                   >
                     {progressPct}%
@@ -1351,7 +1361,7 @@ export default function DashboardPage() {
                             {/* Filled checkmark */}
                             <div style={{
                               width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0, marginTop: '1px',
-                              background: 'linear-gradient(135deg, #14b8a6, #6366f1)',
+                              background: '#8DB654',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               color: 'white', fontSize: '0.65rem', fontWeight: '700',
                             }}>✓</div>
@@ -1449,7 +1459,7 @@ export default function DashboardPage() {
                     }}
                     style={{
                       width: '100%', padding: '0.875rem',
-                      background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+                      background: '#8DB654',
                       border: 'none', borderRadius: '14px',
                       color: 'white', cursor: 'pointer',
                       fontSize: '0.95rem', fontWeight: '700',
@@ -1612,7 +1622,7 @@ export default function DashboardPage() {
                     <div
                       style={{
                         background: isOwn
-                          ? 'linear-gradient(135deg, rgba(168,85,247,0.25), rgba(236,72,153,0.2))'
+                          ? 'rgba(141,182,84,0.25)'
                           : 'rgba(255,255,255,0.06)',
                         border: isOwn ? '1px solid rgba(168,85,247,0.3)' : '1px solid var(--border)',
                         borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
@@ -1700,7 +1710,7 @@ export default function DashboardPage() {
                 type="submit"
                 disabled={!messageInput.trim() || sendingMessage}
                 style={{
-                  background: messageInput.trim() ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'rgba(255,255,255,0.06)',
+                  background: messageInput.trim() ? '#8DB654' : 'rgba(255,255,255,0.06)',
                   border: 'none',
                   borderRadius: '10px',
                   color: 'white',
@@ -1768,10 +1778,7 @@ export default function DashboardPage() {
                     fontWeight: '800',
                     letterSpacing: '0.25em',
                     fontFamily: 'monospace',
-                    background: 'linear-gradient(135deg, #a855f7, #14b8a6)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
+                    color: '#8DB654',
                     lineHeight: 1.2,
                   }}
                 >
@@ -1946,9 +1953,8 @@ function ChoreCard({
     ['#14b8a6', '#a855f7'],
   ];
 
-  function cardGradient(index: number): string {
-    const [a, b] = CARD_COLORS[index % CARD_COLORS.length];
-    return `linear-gradient(135deg, ${a}, ${b})`;
+  function cardGradient(_index: number): string {
+    return '#8DB654';
   }
 
   const assignedMemberIndex = members.findIndex(m => m.user_id === chore.assigned_to);
@@ -1972,7 +1978,7 @@ function ChoreCard({
           height: '22px',
           borderRadius: '50%',
           border: chore.is_complete ? 'none' : '2px solid var(--border)',
-          background: chore.is_complete ? 'linear-gradient(135deg, #14b8a6, #6366f1)' : 'transparent',
+          background: chore.is_complete ? '#8DB654' : 'transparent',
           cursor: 'pointer',
           flexShrink: 0,
           marginTop: '1px',

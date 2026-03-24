@@ -56,7 +56,7 @@ export default function CreateHouseholdPage() {
           alignItems: 'center',
           justifyContent: 'center',
           padding: '1.5rem',
-          background: 'radial-gradient(ellipse at 50% 0%, rgba(20,184,166,0.12) 0%, transparent 60%), var(--bg-main)',
+          background: 'var(--bg-main)',
         }}
       >
         <div style={{ width: '100%', maxWidth: '420px', animation: 'fadeIn 0.4s ease-out', textAlign: 'center' }}>
@@ -70,8 +70,8 @@ export default function CreateHouseholdPage() {
 
           <div
             style={{
-              background: 'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(20,184,166,0.12))',
-              border: '2px dashed rgba(168,85,247,0.4)',
+              background: 'rgba(141,182,84,0.12)',
+              border: '2px dashed rgba(141,182,84,0.4)',
               borderRadius: '16px',
               padding: '1.5rem',
               marginBottom: '1.25rem',
@@ -85,10 +85,7 @@ export default function CreateHouseholdPage() {
                 fontSize: '2.25rem',
                 fontWeight: '800',
                 letterSpacing: '0.25em',
-                background: 'linear-gradient(135deg, #a855f7, #14b8a6)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
+                color: '#8DB654',
                 fontFamily: 'monospace',
               }}
             >

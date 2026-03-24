@@ -13,7 +13,7 @@ export default function HouseholdPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '1.5rem',
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.12) 0%, transparent 60%), var(--bg-main)',
+        background: 'var(--bg-main)',
       }}
     >
       <div style={{ width: '100%', maxWidth: '480px', animation: 'fadeIn 0.4s ease-out' }}>
@@ -23,13 +23,13 @@ export default function HouseholdPage() {
               width: '64px',
               height: '64px',
               borderRadius: '18px',
-              background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+              background: '#8DB654',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 1rem',
               fontSize: '1.75rem',
-              boxShadow: '0 8px 32px rgba(99,102,241,0.4)',
+              boxShadow: '0 8px 32px rgba(141,182,84,0.4)',
             }}
           >
             🏡
@@ -71,7 +71,7 @@ export default function HouseholdPage() {
                   width: '48px',
                   height: '48px',
                   borderRadius: '12px',
-                  background: 'linear-gradient(135deg, rgba(168,85,247,0.2), rgba(236,72,153,0.2))',
+                  background: 'rgba(141,182,84,0.2)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -120,7 +120,7 @@ export default function HouseholdPage() {
                   width: '48px',
                   height: '48px',
                   borderRadius: '12px',
-                  background: 'linear-gradient(135deg, rgba(20,184,166,0.2), rgba(99,102,241,0.2))',
+                  background: 'rgba(141,182,84,0.2)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

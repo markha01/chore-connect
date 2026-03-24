@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "mcp__claude_ai_OSC__list-available-services",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:www.figma.com)",
+      "WebSearch",
+      "mcp__figma__get_design_context"
     ]
   }
 }

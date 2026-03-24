@@ -47,7 +47,7 @@ export default function LoginPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '1.5rem',
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(168,85,247,0.12) 0%, transparent 60%), var(--bg-main)',
+        background: 'var(--bg-main)',
       }}
     >
       <div style={{ width: '100%', maxWidth: '400px', animation: 'fadeIn 0.4s ease-out' }}>
@@ -58,13 +58,13 @@ export default function LoginPage() {
               width: '64px',
               height: '64px',
               borderRadius: '18px',
-              background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+              background: '#8DB654',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 1rem',
               fontSize: '1.75rem',
-              boxShadow: '0 8px 32px rgba(168,85,247,0.4)',
+              boxShadow: '0 8px 32px rgba(141,182,84,0.4)',
             }}
           >
             🏠
@@ -73,10 +73,7 @@ export default function LoginPage() {
             style={{
               fontSize: '1.75rem',
               fontWeight: '800',
-              background: 'linear-gradient(135deg, #a855f7, #ec4899)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
+              color: '#8DB654',
               marginBottom: '0.375rem',
             }}
           >

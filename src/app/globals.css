@@ -90,7 +90,7 @@ body {
 
 /* Button styles */
 .btn-primary {
-  background: linear-gradient(135deg, #a855f7, #ec4899);
+  background: #8DB654;
   border: none;
   border-radius: 10px;
   color: white;
@@ -212,7 +212,7 @@ body {
 .progress-fill {
   border-radius: 100px;
   height: 100%;
-  background: linear-gradient(90deg, #a855f7, #ec4899, #f59e0b);
+  background: #8DB654;
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
