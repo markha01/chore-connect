@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'ChoreShare — Fair chores for everyone',
+  title: 'ChoreConnect — Fair chores for everyone',
   description: 'Make household chores fair and visible for everyone you live with.',
 };
 
