@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { Chore, Member } from './types';
-import { getInitials, formatDisplayDate, getTodayStr } from './helpers';
+import { getInitials, getAvatarGradient, formatDisplayDate, getTodayStr } from './helpers';
 import DatePickerCalendar from './DatePickerCalendar';
 
 interface ChoreCardProps {
@@ -62,21 +62,8 @@ export default function ChoreCard({
     setTimeout(() => { setShowAssign(false); setClosingAssign(false); }, 180);
   }
 
-  const CARD_COLORS = [
-    ['#BC9BF3', '#ec4899'],
-    ['#14b8a6', '#6366f1'],
-    ['#f59e0b', '#ec4899'],
-    ['#6366f1', '#14b8a6'],
-    ['#ec4899', '#f59e0b'],
-    ['#14b8a6', '#BC9BF3'],
-  ];
-  void CARD_COLORS;
-
-  function cardGradient(_index: number): string {
-    return '#8DB654';
-  }
-
   const assignedMemberIndex = members.findIndex(m => m.user_id === chore.assigned_to);
+  const assignedMember = assignedMemberIndex >= 0 ? members[assignedMemberIndex] : null;
 
   function handleCompleteClick() {
     if (chore.is_complete) {
@@ -201,16 +188,21 @@ export default function ChoreCard({
                     width: '18px',
                     height: '18px',
                     borderRadius: '50%',
-                    background: cardGradient(assignedMemberIndex >= 0 ? assignedMemberIndex : 0),
+                    background: getAvatarGradient(assignedMemberIndex >= 0 ? assignedMemberIndex : 0),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '0.55rem',
                     fontWeight: '700',
                     color: 'white',
+                    overflow: 'hidden',
+                    flexShrink: 0,
                   }}
                 >
-                  {chore.assigned_display_name?.[0]?.toUpperCase() ?? '?'}
+                  {assignedMember?.avatar_url
+                    ? <img src={assignedMember.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    : chore.assigned_display_name?.[0]?.toUpperCase() ?? '?'
+                  }
                 </div>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   {chore.assigned_to === currentUserId ? 'You' : chore.assigned_display_name}
@@ -394,11 +386,15 @@ export default function ChoreCard({
                       >
                         <div style={{
                           width: '36px', height: '36px', borderRadius: '50%',
-                          background: cardGradient(i),
+                          background: getAvatarGradient(i),
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: '0.75rem', fontWeight: '700', color: 'white', flexShrink: 0,
+                          overflow: 'hidden',
                         }}>
-                          {getInitials(m.display_name)}
+                          {m.avatar_url
+                            ? <img src={m.avatar_url} alt={m.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            : getInitials(m.display_name)
+                          }
                         </div>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {m.display_name}{m.user_id === currentUserId ? ' (you)' : ''}

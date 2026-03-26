@@ -1,20 +1,18 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Me, Household } from './types';
 import { getInitials, getAvatarGradient } from './helpers';
 
 const NAV_H = 64;
+const CROP_FRAME = 280;   // px – size of the square crop viewport
+const CROP_RADIUS = 120;  // px – radius of the circular crop region
 
 interface SettingsViewProps {
   me: Me | null;
   household: Household | null;
   fetchAll: () => Promise<void>;
-}
-
-function getMemberColorIndex(userId: number): number {
-  return userId % 6;
 }
 
 export default function SettingsView({ me, household, fetchAll }: SettingsViewProps) {
@@ -34,6 +32,17 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
   const [leavingHousehold, setLeavingHousehold] = useState(false);
   const [moveOutError, setMoveOutError] = useState('');
 
+  // Crop modal state
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropMinZoom, setCropMinZoom] = useState(1);
+  const [cropImgDims, setCropImgDims] = useState({ w: 0, h: 0 });
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const cropDragRef = useRef<{ startX: number; startY: number; startOffX: number; startOffY: number } | null>(null);
+
+  const myColorIndex = (household?.members.findIndex(m => m.user_id === (me?.userId ?? -1)) ?? 0);
+
   function copyInviteLink() {
     if (!household) return;
     const link = `${window.location.origin}/household/join?code=${household.inviteCode}`;
@@ -43,32 +52,94 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
     });
   }
 
-  function compressImage(file: File, maxSize: number, quality: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ratio = Math.min(maxSize / img.width, maxSize / img.height);
-        canvas.width = Math.round(img.width * ratio);
-        canvas.height = Math.round(img.height * ratio);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { reject(new Error('No canvas context')); return; }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject;
-      img.src = url;
+  // ── Crop helpers ─────────────────────────────────────────────────────────────
+
+  function handleCropImageLoad() {
+    const img = cropImgRef.current;
+    if (!img) return;
+    const minZoom = Math.max((2 * CROP_RADIUS) / img.naturalWidth, (2 * CROP_RADIUS) / img.naturalHeight);
+    setCropImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+    setCropMinZoom(minZoom);
+    setCropZoom(minZoom);
+    setCropOffset({ x: 0, y: 0 });
+  }
+
+  function handleCropPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    cropDragRef.current = { startX: e.clientX, startY: e.clientY, startOffX: cropOffset.x, startOffY: cropOffset.y };
+  }
+
+  function handleCropPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!cropDragRef.current || !cropImgRef.current) return;
+    const dx = e.clientX - cropDragRef.current.startX;
+    const dy = e.clientY - cropDragRef.current.startY;
+    const img = cropImgRef.current;
+    const maxX = Math.max(0, (img.naturalWidth * cropZoom) / 2 - CROP_RADIUS);
+    const maxY = Math.max(0, (img.naturalHeight * cropZoom) / 2 - CROP_RADIUS);
+    setCropOffset({
+      x: Math.max(-maxX, Math.min(maxX, cropDragRef.current.startOffX + dx)),
+      y: Math.max(-maxY, Math.min(maxY, cropDragRef.current.startOffY + dy)),
     });
   }
 
-  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function handleCropPointerUp() {
+    cropDragRef.current = null;
+  }
+
+  function handleZoomChange(newZoom: number) {
+    const img = cropImgRef.current;
+    if (!img) return;
+    const maxX = Math.max(0, (img.naturalWidth * newZoom) / 2 - CROP_RADIUS);
+    const maxY = Math.max(0, (img.naturalHeight * newZoom) / 2 - CROP_RADIUS);
+    setCropZoom(newZoom);
+    setCropOffset(prev => ({
+      x: Math.max(-maxX, Math.min(maxX, prev.x)),
+      y: Math.max(-maxY, Math.min(maxY, prev.y)),
+    }));
+  }
+
+  function handleCropWheel(e: React.WheelEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.05 : -0.05;
+    const newZoom = Math.max(cropMinZoom, Math.min(cropMinZoom * 4, cropZoom + delta * cropMinZoom));
+    handleZoomChange(newZoom);
+  }
+
+  function closeCropModal() {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+    setCropImgDims({ w: 0, h: 0 });
+  }
+
+  async function applyCrop() {
+    const img = cropImgRef.current;
+    if (!img || !cropSrc) return;
+
+    const OUTPUT_SIZE = 240;
+    const canvas = document.createElement('canvas');
+    canvas.width = OUTPUT_SIZE;
+    canvas.height = OUTPUT_SIZE;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clip to circle
+    ctx.beginPath();
+    ctx.arc(OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Map the visible crop circle back to natural image coordinates
+    const srcRadius = CROP_RADIUS / cropZoom;
+    const srcCX = img.naturalWidth / 2 - cropOffset.x / cropZoom;
+    const srcCY = img.naturalHeight / 2 - cropOffset.y / cropZoom;
+    ctx.drawImage(img, srcCX - srcRadius, srcCY - srcRadius, srcRadius * 2, srcRadius * 2, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+    URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+
     setUploadingAvatar(true);
     try {
-      const dataUrl = await compressImage(file, 120, 0.75);
       const res = await fetch('/api/auth/me', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -77,7 +148,32 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
       if (res.ok) await fetchAll();
     } catch { /* silent */ } finally {
       setUploadingAvatar(false);
-      e.target.value = '';
+    }
+  }
+
+  // ── Avatar upload / reset ────────────────────────────────────────────────────
+
+  function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const objectUrl = URL.createObjectURL(file);
+    setCropSrc(objectUrl);
+    setCropOffset({ x: 0, y: 0 });
+    setCropZoom(1);
+  }
+
+  async function handleResetAvatar() {
+    setUploadingAvatar(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarUrl: null }),
+      });
+      if (res.ok) await fetchAll();
+    } catch { /* silent */ } finally {
+      setUploadingAvatar(false);
     }
   }
 
@@ -144,30 +240,46 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
       {/* ── Profile card ── */}
       <div className="card" style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-          <label style={{ position: 'relative', cursor: 'pointer', flexShrink: 0, display: 'block' }}>
-            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-            {me?.avatarUrl ? (
-              <img src={me.avatarUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
-            ) : (
-              <div className="avatar" style={{ width: 72, height: 72, background: getAvatarGradient(getMemberColorIndex(me?.userId ?? 0)), fontSize: '1.35rem', color: 'white' }}>
-                {getInitials(me?.displayName ?? '?')}
-              </div>
-            )}
-            <div
-              style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(0,0,0,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: uploadingAvatar ? 1 : 0, transition: 'opacity 0.15s' }}
-              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-              onMouseLeave={e => { if (!uploadingAvatar) e.currentTarget.style.opacity = '0'; }}
-            >
-              {uploadingAvatar ? (
-                <div style={{ width: 20, height: 20, border: '2.5px solid rgba(255,255,255,0.8)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+
+          {/* Avatar + change/remove controls */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ position: 'relative', cursor: 'pointer', flexShrink: 0, display: 'block' }}>
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+              {me?.avatarUrl ? (
+                <img src={me.avatarUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
-                </svg>
+                <div className="avatar" style={{ width: 72, height: 72, background: getAvatarGradient(myColorIndex >= 0 ? myColorIndex : 0), fontSize: '1.35rem', color: 'white' }}>
+                  {getInitials(me?.displayName ?? '?')}
+                </div>
               )}
-            </div>
-          </label>
+              <div
+                style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(0,0,0,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: uploadingAvatar ? 1 : 0, transition: 'opacity 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                onMouseLeave={e => { if (!uploadingAvatar) e.currentTarget.style.opacity = '0'; }}
+              >
+                {uploadingAvatar ? (
+                  <div style={{ width: 20, height: 20, border: '2.5px solid rgba(255,255,255,0.8)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                )}
+              </div>
+            </label>
+
+            {/* Remove photo button — only shown when user has a custom photo */}
+            {me?.avatarUrl && !uploadingAvatar && (
+              <button
+                onClick={handleResetAvatar}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.1rem 0.4rem', borderRadius: 6, transition: 'color 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+              >
+                Remove photo
+              </button>
+            )}
+          </div>
 
           {editingDisplayName ? (
             <form onSubmit={handleSaveDisplayName} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', width: '100%', maxWidth: 260 }}>
@@ -354,6 +466,83 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Crop modal ── */}
+      {cropSrc && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={closeCropModal}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#1a1a2e', borderRadius: 20, padding: '1.25rem', width: 'min(340px, 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', boxShadow: '0 24px 64px rgba(0,0,0,0.8)', animation: 'popIn 0.22s cubic-bezier(0.34,1.56,0.64,1)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#f1f1f8' }}>Crop photo</span>
+              <button onClick={closeCropModal} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: 28, height: 28, color: '#9b9bb8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700 }}>✕</button>
+            </div>
+
+            {/* Crop viewport */}
+            <div
+              style={{ width: CROP_FRAME, height: CROP_FRAME, position: 'relative', overflow: 'hidden', cursor: 'grab', borderRadius: 12, background: '#000', touchAction: 'none', userSelect: 'none' }}
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerUp}
+              onPointerLeave={handleCropPointerUp}
+              onWheel={handleCropWheel}
+            >
+              {/* Actual image */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={cropImgRef}
+                src={cropSrc}
+                alt="Crop preview"
+                onLoad={handleCropImageLoad}
+                draggable={false}
+                style={{
+                  position: 'absolute',
+                  width: cropImgDims.w > 0 ? cropImgDims.w * cropZoom : 'auto',
+                  height: cropImgDims.h > 0 ? cropImgDims.h * cropZoom : 'auto',
+                  left: cropImgDims.w > 0 ? CROP_FRAME / 2 + cropOffset.x - (cropImgDims.w * cropZoom) / 2 : 0,
+                  top: cropImgDims.h > 0 ? CROP_FRAME / 2 + cropOffset.y - (cropImgDims.h * cropZoom) / 2 : 0,
+                  pointerEvents: 'none',
+                  maxWidth: 'none',
+                }}
+              />
+
+              {/* Dark overlay outside circle (box-shadow trick) */}
+              <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: CROP_RADIUS * 2, height: CROP_RADIUS * 2, borderRadius: '50%', boxShadow: `0 0 0 ${CROP_FRAME}px rgba(0,0,0,0.6)`, pointerEvents: 'none', zIndex: 2 }} />
+              {/* Circle border */}
+              <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: CROP_RADIUS * 2, height: CROP_RADIUS * 2, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.65)', pointerEvents: 'none', zIndex: 3 }} />
+            </div>
+
+            {/* Zoom slider */}
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              <input
+                type="range"
+                min={cropMinZoom}
+                max={cropMinZoom * 4}
+                step={cropMinZoom * 0.01}
+                value={cropZoom}
+                onChange={e => handleZoomChange(parseFloat(e.target.value))}
+                style={{ flex: 1, accentColor: '#BC9BF3' }}
+              />
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            </div>
+
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, textAlign: 'center' }}>
+              Drag to reposition · Scroll to zoom
+            </p>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: '0.625rem', width: '100%' }}>
+              <button onClick={closeCropModal} style={{ flex: 1, background: 'transparent', border: '1.5px solid var(--border)', borderRadius: 10, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.88rem', padding: '0.65rem', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={applyCrop} style={{ flex: 2, background: '#8DB654', border: 'none', borderRadius: 10, color: 'white', fontWeight: 600, fontSize: '0.88rem', padding: '0.65rem', cursor: 'pointer' }}>Apply</button>
             </div>
           </div>
         </div>

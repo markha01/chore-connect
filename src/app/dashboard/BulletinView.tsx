@@ -21,6 +21,7 @@ export default function BulletinView({ me, household, isActive }: BulletinViewPr
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [contextMenuMsgId, setContextMenuMsgId] = useState<number | null>(null);
   const [isClosingContextMenu, setIsClosingContextMenu] = useState(false);
+  const [hoveredMsgId, setHoveredMsgId] = useState<number | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
@@ -192,9 +193,14 @@ export default function BulletinView({ me, household, isActive }: BulletinViewPr
                   fontSize: '0.9rem',
                   color: 'white',
                   border: m.user_id === me?.userId ? '2px solid #BC9BF3' : '2px solid transparent',
+                  overflow: 'hidden',
+                  padding: 0,
                 }}
               >
-                {getInitials(m.display_name)}
+                {m.avatar_url
+                  ? <img src={m.avatar_url} alt={m.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  : getInitials(m.display_name)
+                }
               </div>
               <span style={{ fontSize: '0.7rem', fontWeight: '500', color: 'var(--text-muted)', maxWidth: '52px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
                 {m.user_id === me?.userId ? 'You' : m.display_name.split(' ')[0]}
@@ -243,9 +249,86 @@ export default function BulletinView({ me, household, isActive }: BulletinViewPr
         {messages.map(msg => {
           const isOwn = msg.user_id === me?.userId;
           const colorIdx = getMemberColorIndex(msg.user_id);
+          const senderMember = household?.members.find(m => m.user_id === msg.user_id);
+          const isHovered = hoveredMsgId === msg.id;
+
+          const hoverActions = (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.2rem',
+                opacity: isHovered ? 1 : 0,
+                transition: 'opacity 0.15s',
+                flexShrink: 0,
+              }}
+            >
+              <button
+                onClick={() => handleLikeMessage(msg.id)}
+                title={msg.liked_by_me ? 'Unlike' : 'Like'}
+                style={{
+                  background: msg.liked_by_me ? 'rgba(236,72,153,0.15)' : 'rgba(255,255,255,0.07)',
+                  border: msg.liked_by_me ? '1px solid rgba(236,72,153,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: msg.liked_by_me ? '#ec4899' : 'var(--text-muted)',
+                  fontSize: '0.88rem',
+                  transition: 'background 0.15s, color 0.15s, transform 0.12s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.15)';
+                  if (!msg.liked_by_me) (e.currentTarget as HTMLButtonElement).style.color = '#ec4899';
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)';
+                  if (!msg.liked_by_me) (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
+                }}
+              >
+                {msg.liked_by_me ? '♥' : '♡'}
+              </button>
+
+              <button
+                onClick={() => setContextMenuMsgId(msg.id)}
+                title="More options"
+                style={{
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.13)';
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)';
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
+                </svg>
+              </button>
+            </div>
+          );
+
           return (
             <div
               key={msg.id}
+              onMouseEnter={() => setHoveredMsgId(msg.id)}
+              onMouseLeave={() => setHoveredMsgId(null)}
               style={{
                 display: 'flex',
                 flexDirection: isOwn ? 'row-reverse' : 'row',
@@ -266,9 +349,14 @@ export default function BulletinView({ me, household, isActive }: BulletinViewPr
                     color: 'white',
                     flexShrink: 0,
                     marginBottom: '1.5rem',
+                    overflow: 'hidden',
+                    padding: 0,
                   }}
                 >
-                  {getInitials(msg.display_name)}
+                  {senderMember?.avatar_url
+                    ? <img src={senderMember.avatar_url} alt={msg.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    : getInitials(msg.display_name)
+                  }
                 </div>
               )}
 
@@ -283,62 +371,60 @@ export default function BulletinView({ me, household, isActive }: BulletinViewPr
                   </span>
                 </div>
 
-                {/* Bubble */}
-                <div
-                  onMouseDown={() => startLongPress(msg.id)}
-                  onMouseUp={cancelLongPress}
-                  onMouseLeave={cancelLongPress}
-                  onTouchStart={() => startLongPress(msg.id)}
-                  onTouchEnd={cancelLongPress}
-                  onTouchMove={cancelLongPress}
-                  onContextMenu={(e) => { e.preventDefault(); cancelLongPress(); setContextMenuMsgId(msg.id); }}
-                  style={{
-                    background: isOwn
-                      ? 'rgba(115,96,249,0.22)'
-                      : 'rgba(255,255,255,0.06)',
-                    border: isOwn ? '1px solid rgba(115,96,249,0.35)' : '1px solid var(--border)',
-                    borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                    padding: '0.5rem 0.875rem',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem',
-                    lineHeight: '1.45',
-                    wordBreak: 'break-word',
-                    userSelect: 'none',
-                    cursor: 'default',
-                  }}
-                >
-                  {msg.content}
-                  {msg.is_edited && (
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', opacity: 0.5, marginTop: '0.2rem' }}>
-                      Edited
-                    </div>
-                  )}
+                {/* Bubble + hover actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  {isOwn && hoverActions}
+                  <div
+                    onTouchStart={() => startLongPress(msg.id)}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
+                    onContextMenu={(e) => { e.preventDefault(); setContextMenuMsgId(msg.id); }}
+                    style={{
+                      background: isOwn ? 'rgba(115,96,249,0.22)' : 'rgba(255,255,255,0.06)',
+                      border: isOwn ? '1px solid rgba(115,96,249,0.35)' : '1px solid var(--border)',
+                      borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                      padding: '0.5rem 0.875rem',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.9rem',
+                      lineHeight: '1.45',
+                      wordBreak: 'break-word',
+                      userSelect: 'none',
+                      cursor: 'default',
+                    }}
+                  >
+                    {msg.content}
+                    {msg.is_edited && (
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', opacity: 0.5, marginTop: '0.2rem' }}>
+                        Edited
+                      </div>
+                    )}
+                  </div>
+                  {!isOwn && hoverActions}
                 </div>
 
-                {/* Like + delete row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexDirection: isOwn ? 'row-reverse' : 'row' }}>
+                {/* Like count pill — visible when liked */}
+                {msg.like_count > 0 && (
                   <button
                     onClick={() => handleLikeMessage(msg.id)}
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
+                      background: msg.liked_by_me ? 'rgba(236,72,153,0.15)' : 'rgba(255,255,255,0.06)',
+                      border: msg.liked_by_me ? '1px solid rgba(236,72,153,0.3)' : '1px solid var(--border)',
+                      borderRadius: '100px',
+                      padding: '0.1rem 0.5rem 0.1rem 0.35rem',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.25rem',
+                      cursor: 'pointer',
                       color: msg.liked_by_me ? '#ec4899' : 'var(--text-muted)',
-                      fontSize: '0.78rem',
+                      fontSize: '0.72rem',
                       fontWeight: '600',
-                      padding: '0.15rem 0.35rem',
-                      borderRadius: '6px',
-                      transition: 'color 0.15s',
+                      transition: 'background 0.15s, color 0.15s',
                     }}
                   >
-                    <span style={{ fontSize: '0.9rem' }}>{msg.liked_by_me ? '♥' : '♡'}</span>
-                    {msg.like_count > 0 && <span>{msg.like_count}</span>}
+                    <span style={{ fontSize: '0.75rem' }}>♥</span>
+                    <span>{msg.like_count}</span>
                   </button>
-
-                </div>
+                )}
               </div>
             </div>
           );

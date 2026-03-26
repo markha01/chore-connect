@@ -81,8 +81,18 @@ export const AVATAR_COLORS = [
   ['#14b8a6', '#BC9BF3'],
 ];
 
-export function getAvatarGradient(_index: number): string {
-  return '#8DB654';
+// Solid colors per member — all pass WCAG AA contrast (≥4.5:1) with white text
+const MEMBER_COLORS = [
+  '#7C3AED', // violet
+  '#0F766E', // teal
+  '#B45309', // amber
+  '#BE185D', // pink
+  '#1D4ED8', // blue
+  '#15803D', // green
+];
+
+export function getAvatarGradient(index: number): string {
+  return MEMBER_COLORS[((index % MEMBER_COLORS.length) + MEMBER_COLORS.length) % MEMBER_COLORS.length];
 }
 
 export function getInitials(name: string): string {
