@@ -83,12 +83,21 @@ export const AVATAR_COLORS = [
 
 // Solid colors per member — all pass WCAG AA contrast (≥4.5:1) with white text
 const MEMBER_COLORS = [
-  '#7C3AED', // violet
-  '#0F766E', // teal
-  '#B45309', // amber
-  '#BE185D', // pink
-  '#1D4ED8', // blue
-  '#15803D', // green
+  '#7C3AED', // violet-700
+  '#0F766E', // teal-700
+  '#B45309', // amber-700
+  '#BE185D', // pink-700
+  '#1D4ED8', // blue-700
+  '#15803D', // green-700
+  '#9333EA', // purple-600
+  '#0369A1', // sky-700
+  '#C2410C', // orange-700
+  '#6D28D9', // violet-800
+  '#047857', // emerald-700
+  '#1E40AF', // blue-800
+  '#9D174D', // pink-800
+  '#92400E', // amber-800
+  '#0E7490', // cyan-700
 ];
 
 export function getAvatarGradient(index: number): string {

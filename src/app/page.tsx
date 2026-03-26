@@ -3,6 +3,7 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Home } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -63,11 +64,10 @@ export default function LoginPage() {
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 1rem',
-              fontSize: '1.75rem',
               boxShadow: '0 8px 32px rgba(141,182,84,0.4)',
             }}
           >
-            🏠
+            <Home size={30} color="white" strokeWidth={1.75} />
           </div>
           <h1
             style={{

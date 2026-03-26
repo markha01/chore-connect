@@ -45,6 +45,8 @@ function addDays(dateStr: string, days: number): string {
 
 const MEMBER_COLORS = [
   '#7C3AED', '#0F766E', '#B45309', '#BE185D', '#1D4ED8', '#15803D',
+  '#9333EA', '#0369A1', '#C2410C', '#6D28D9', '#047857',
+  '#1E40AF', '#9D174D', '#92400E', '#0E7490',
 ];
 
 function getAvatarGradient(index: number): string {

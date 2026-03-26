@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { Me, Household, Chore } from './types';
 import {
   getTodayStr,
@@ -436,7 +437,7 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
                     boxSizing: 'border-box',
                   }}
                 >
-                  <span>📅</span>
+                  <CalendarDays size={15} color="#ef4444" strokeWidth={1.75} />
                   <span style={{ fontWeight: '500' }}>{formatDisplayDate(newDueDate)}</span>
                 </button>
                 {showDatePicker && (
@@ -658,7 +659,7 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
             <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: '16px' }}>
               <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>✓</div>
               <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>No chores for today</div>
-              <div style={{ fontSize: '0.85rem' }}>Hit &ldquo;+ Add chore&rdquo; to get started.</div>
+              <div style={{ fontSize: '0.85rem' }}>Tap the + button below to get started.</div>
             </div>
           )}
 

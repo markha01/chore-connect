@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { Chore, Member } from './types';
 import { getInitials, getAvatarGradient, formatDisplayDate, getTodayStr } from './helpers';
 import DatePickerCalendar from './DatePickerCalendar';
@@ -536,7 +537,7 @@ export default function ChoreCard({
                     boxSizing: 'border-box',
                   }}
                 >
-                  <span>📅</span>
+                  <CalendarDays size={15} color="#ef4444" strokeWidth={1.75} />
                   <span>{editDueDate ? formatDisplayDate(editDueDate) : 'No due date'}</span>
                   {editDueDate && (
                     <span

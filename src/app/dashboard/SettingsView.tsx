@@ -2,6 +2,7 @@
 
 import { useState, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { Home } from 'lucide-react';
 import { Me, Household } from './types';
 import { getInitials, getAvatarGradient } from './helpers';
 
@@ -31,6 +32,7 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
   const [showMoveOutConfirm, setShowMoveOutConfirm] = useState(false);
   const [leavingHousehold, setLeavingHousehold] = useState(false);
   const [moveOutError, setMoveOutError] = useState('');
+  const [signOutError, setSignOutError] = useState('');
 
   // Crop modal state
   const [cropSrc, setCropSrc] = useState<string | null>(null);
@@ -227,11 +229,21 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
 
   async function handleSignOut() {
     setSigningOut(true);
+    setSignOutError('');
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSignOutError(data.error ?? 'Could not sign out. Please try again.');
+        setSigningOut(false);
+        return;
+      }
       router.push('/');
       router.refresh();
-    } catch { setSigningOut(false); }
+    } catch {
+      setSignOutError('Could not sign out. Please try again.');
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -318,7 +330,7 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
       {/* ── Household card ── */}
       <div className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          🏠 {household?.name}
+          <Home size={16} strokeWidth={2} style={{ flexShrink: 0 }} /> {household?.name}
         </h2>
 
         <button
@@ -397,8 +409,8 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
           {moveOutError && <div className="msg-error" style={{ marginBottom: '0.625rem', fontSize: '0.82rem' }}>{moveOutError}</div>}
           {showMoveOutConfirm ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <p style={{ fontSize: '0.85rem', color: '#b45309', fontWeight: 500, margin: 0, textAlign: 'center' }}>
-                Leave <strong>{household?.name}</strong>? You won&apos;t be able to see chores or messages.
+              <p style={{ fontSize: '0.85rem', color: '#ef4444', fontWeight: 500, margin: 0, textAlign: 'center' }}>
+                Are you sure you want to leave <strong>{household?.name}</strong>? This action cannot be undone.
               </p>
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                 <button onClick={handleMoveOut} disabled={leavingHousehold} style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 10, color: '#ef4444', fontWeight: 600, fontSize: '0.88rem', padding: '0.6rem', cursor: leavingHousehold ? 'default' : 'pointer', opacity: leavingHousehold ? 0.6 : 1, transition: 'opacity 0.15s' }}>
@@ -424,6 +436,7 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
       </div>
 
       {/* Sign out */}
+      {signOutError && <div className="msg-error" style={{ marginBottom: '0.5rem', fontSize: '0.82rem' }}>{signOutError}</div>}
       <button
         onClick={handleSignOut}
         disabled={signingOut}
