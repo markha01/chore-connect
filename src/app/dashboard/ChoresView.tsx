@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import { Me, Household, Chore } from './types';
 import {
   getTodayStr,
@@ -26,13 +25,12 @@ interface ChoresViewProps {
 }
 
 export default function ChoresView({ me, household, chores, fetchAll }: ChoresViewProps) {
-  const router = useRouter();
-
   // Chores tab
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'history'>('today');
 
   // Add chore form
   const [showAddForm, setShowAddForm] = useState(false);
+  const [isClosingAddForm, setIsClosingAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newAssigned, setNewAssigned] = useState<number | ''>('');
@@ -41,9 +39,8 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
   const [addError, setAddError] = useState('');
   const [adding, setAdding] = useState(false);
   const [newFrequency, setNewFrequency] = useState<'once' | 'daily' | 'every-other-day' | 'weekly' | 'every-other-week' | 'monthly'>('once');
-  const [showAssignPicker, setShowAssignPicker] = useState(false);
-  const [isClosingAssignPicker, setIsClosingAssignPicker] = useState(false);
-  const [pendingAssigned, setPendingAssigned] = useState<number | ''>('');
+  const [showFrequencyPicker, setShowFrequencyPicker] = useState(false);
+  const [isClosingFrequencyPicker, setIsClosingFrequencyPicker] = useState(false);
 
   // History tab
   const [historyPopupChore, setHistoryPopupChore] = useState<Chore | null>(null);
@@ -95,9 +92,24 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
   }
   void getMemberColorIndex;
 
-  function closeAssignPicker() {
-    setIsClosingAssignPicker(true);
-    setTimeout(() => { setShowAssignPicker(false); setIsClosingAssignPicker(false); }, 200);
+  function openAddForm() {
+    setNewTitle('');
+    setNewDesc('');
+    setNewAssigned('');
+    setNewDueDate(getTodayStr());
+    setNewFrequency('once');
+    setAddError('');
+    setShowAddForm(true);
+  }
+
+  function closeAddForm() {
+    setIsClosingAddForm(true);
+    setTimeout(() => { setShowAddForm(false); setIsClosingAddForm(false); }, 180);
+  }
+
+  function closeFrequencyPicker() {
+    setIsClosingFrequencyPicker(true);
+    setTimeout(() => { setShowFrequencyPicker(false); setIsClosingFrequencyPicker(false); }, 180);
   }
 
   function closeHistoryPopup() {
@@ -145,9 +157,7 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
       setNewAssigned('');
       setNewDueDate(getTodayStr());
       setNewFrequency('once');
-      setShowAssignPicker(false);
-      setPendingAssigned('');
-      setShowAddForm(false);
+      closeAddForm();
       const currentTodayStr = getTodayStr();
       setActiveTab(newDueDate > currentTodayStr ? 'upcoming' : 'today');
       await fetchAll();
@@ -245,7 +255,7 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
             return (
               <button
                 key={tab}
-                onClick={() => { setActiveTab(tab); setShowAddForm(false); }}
+                onClick={() => { setActiveTab(tab); if (showAddForm) closeAddForm(); }}
                 style={{
                   background: isActive ? '#8DB654' : 'transparent',
                   border: 'none',
@@ -283,7 +293,7 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
       {/* FAB — Add chore (bottom-right, fixed, hidden on history tab) */}
       {activeTab !== 'history' && (
         <button
-          onClick={() => router.push('/dashboard/chores/new')}
+          onClick={openAddForm}
           style={{
             position: 'fixed',
             bottom: `${NAV_H + 20}px`,
@@ -313,277 +323,294 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
         </button>
       )}
 
-      {/* Add chore form — replaced by /dashboard/chores/new page */}
+      {/* ── Add chore modal ── */}
       {showAddForm && (
-        <div className="card" style={{ marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '1rem' }}>New chore</h3>
-          <form onSubmit={handleAddChore} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                What needs doing?
-              </label>
-              <input
-                type="text"
-                value={newTitle}
-                onChange={e => setNewTitle(e.target.value)}
-                className="input-dark"
-                placeholder="Vacuum the living room"
-                maxLength={100}
-                required
-                autoFocus
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Extra notes (optional)
-              </label>
-              <input
-                type="text"
-                value={newDesc}
-                onChange={e => setNewDesc(e.target.value)}
-                className="input-dark"
-                placeholder="Under the couch too"
-                maxLength={200}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Date
-              </label>
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={closeAddForm}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)',
+              animation: isClosingAddForm ? 'backdropFadeOut 0.18s ease-in forwards' : 'backdropFade 0.15s ease',
+            }}
+          />
+          {/* Centered card */}
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 201,
+            background: '#252535',
+            borderRadius: '20px',
+            width: 'min(400px, calc(100vw - 2rem))',
+            maxHeight: 'min(680px, calc(100vh - 4rem))',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.75)',
+            overflow: 'hidden',
+            animation: isClosingAddForm ? 'popOut 0.18s ease-in forwards' : 'popIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }}>
+            {/* Header */}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 1rem 0.875rem', flexShrink: 0 }}>
+              <span style={{ fontWeight: '700', fontSize: '1rem', color: '#f1f1f8' }}>New chore</span>
               <button
                 type="button"
-                onClick={() => setShowDatePicker(true)}
+                onClick={closeAddForm}
                 style={{
-                  width: '100%',
-                  background: 'rgba(0,0,0,0.04)',
-                  border: '1.5px solid #d5cfbf',
-                  borderRadius: '10px',
-                  color: '#1a1827',
-                  fontSize: '0.9rem',
-                  padding: '0.625rem 0.875rem',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  transition: 'border-color 0.2s',
+                  position: 'absolute', right: '1rem',
+                  width: '28px', height: '28px', borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.1)', border: 'none',
+                  color: '#9b9bb8', cursor: 'pointer',
+                  fontSize: '0.8rem', fontWeight: '700',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-              >
-                <span>📅</span>
-                <span style={{ fontWeight: '500' }}>{formatDisplayDate(newDueDate)}</span>
-              </button>
-              {showDatePicker && (
-                <DatePickerCalendar
-                  value={newDueDate}
-                  onChange={val => { setNewDueDate(val); setShowDatePicker(false); }}
-                  onClose={() => setShowDatePicker(false)}
+              >✕</button>
+            </div>
+
+            {/* Scrollable form body */}
+            <form
+              onSubmit={handleAddChore}
+              style={{
+                overflowY: 'auto',
+                padding: '0 1rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.875rem',
+                borderTop: '1px solid rgba(255,255,255,0.07)',
+              }}
+            >
+              <div style={{ marginTop: '0.875rem' }}>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#9b9bb8', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  What needs doing?
+                </label>
+                <input
+                  type="text"
+                  value={newTitle}
+                  onChange={e => setNewTitle(e.target.value)}
+                  placeholder="Vacuum the living room"
+                  maxLength={100}
+                  required
+                  autoFocus
+                  style={{
+                    width: '100%', background: 'rgba(255,255,255,0.06)',
+                    border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: '10px',
+                    color: '#f1f1f8', fontSize: '0.9rem', padding: '0.6rem 0.75rem',
+                    outline: 'none', boxSizing: 'border-box',
+                  }}
                 />
-              )}
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Frequency
-              </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                {([
-                  { value: 'once', label: 'Once' },
-                  { value: 'daily', label: 'Daily' },
-                  { value: 'every-other-day', label: 'Every other day' },
-                  { value: 'weekly', label: 'Weekly' },
-                  { value: 'every-other-week', label: 'Every other week' },
-                  { value: 'monthly', label: 'Every month' },
-                ] as const).map(({ value, label }) => {
-                  const isSel = newFrequency === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setNewFrequency(value)}
-                      style={{
-                        background: isSel ? '#8DB654' : 'rgba(0,0,0,0.05)',
-                        border: isSel ? 'none' : '1.5px solid #d5cfbf',
-                        borderRadius: '100px',
-                        color: isSel ? 'white' : '#6b6882',
-                        cursor: 'pointer',
-                        fontSize: '0.78rem',
-                        fontWeight: isSel ? '600' : '500',
-                        padding: '0.3rem 0.75rem',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
               </div>
-            </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Assign to
-              </label>
-              {/* Trigger button — same style as the date picker */}
-              <button
-                type="button"
-                onClick={() => { setPendingAssigned(newAssigned); setShowAssignPicker(true); }}
-                style={{
-                  width: '100%',
-                  background: 'rgba(0,0,0,0.04)',
-                  border: '1.5px solid #d5cfbf',
-                  borderRadius: '10px',
-                  color: '#1a1827',
-                  fontSize: '0.9rem',
-                  padding: '0.625rem 0.875rem',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  transition: 'border-color 0.2s',
-                }}
-              >
-                {newAssigned ? (() => {
-                  const idx = household?.members.findIndex(m => m.user_id === newAssigned) ?? 0;
-                  const member = household?.members.find(m => m.user_id === newAssigned);
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#9b9bb8', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Extra notes (optional)
+                </label>
+                <input
+                  type="text"
+                  value={newDesc}
+                  onChange={e => setNewDesc(e.target.value)}
+                  placeholder="Under the couch too"
+                  maxLength={200}
+                  style={{
+                    width: '100%', background: 'rgba(255,255,255,0.06)',
+                    border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: '10px',
+                    color: '#f1f1f8', fontSize: '0.9rem', padding: '0.6rem 0.75rem',
+                    outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#9b9bb8', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Date
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowDatePicker(true)}
+                  style={{
+                    width: '100%', background: 'rgba(255,255,255,0.06)',
+                    border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: '10px',
+                    color: '#f1f1f8', fontSize: '0.9rem', padding: '0.6rem 0.75rem',
+                    textAlign: 'left', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <span>📅</span>
+                  <span style={{ fontWeight: '500' }}>{formatDisplayDate(newDueDate)}</span>
+                </button>
+                {showDatePicker && (
+                  <DatePickerCalendar
+                    value={newDueDate}
+                    onChange={val => { setNewDueDate(val); setShowDatePicker(false); }}
+                    onClose={() => setShowDatePicker(false)}
+                  />
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#9b9bb8', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Frequency
+                </label>
+                {(() => {
+                  const FREQ_OPTIONS = [
+                    { value: 'once', label: 'Once', desc: 'Just this one time' },
+                    { value: 'daily', label: 'Daily', desc: 'Every day for a week' },
+                    { value: 'every-other-day', label: 'Every other day', desc: 'Every 2 days for 2 weeks' },
+                    { value: 'weekly', label: 'Weekly', desc: 'Every week for a month' },
+                    { value: 'every-other-week', label: 'Every other week', desc: 'Every 2 weeks for 2 months' },
+                    { value: 'monthly', label: 'Every month', desc: 'Monthly for 3 months' },
+                  ] as const;
+                  const selected = FREQ_OPTIONS.find(o => o.value === newFrequency)!;
                   return (
                     <>
-                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: getAvatarGradient(idx >= 0 ? idx : 0), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
-                        {getInitials(member?.display_name ?? '?')}
-                      </div>
-                      <span style={{ fontWeight: '500' }}>
-                        {member?.display_name}{newAssigned === me?.userId ? ' (you)' : ''}
-                      </span>
-                    </>
-                  );
-                })() : (
-                  <span style={{ color: '#9b95aa' }}>Unassigned — anyone can pick it up</span>
-                )}
-                <span style={{ marginLeft: 'auto', color: '#9b95aa', fontSize: '0.7rem' }}>▾</span>
-              </button>
-
-              {/* Mobile bottom-sheet popup */}
-              {showAssignPicker && (
-                <>
-                  {/* Backdrop */}
-                  <div
-                    onClick={closeAssignPicker}
-                    style={{
-                      position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)',
-                      animation: isClosingAssignPicker ? 'backdropFadeOut 0.2s ease-in forwards' : 'backdropFade 0.15s ease',
-                    }}
-                  />
-                  {/* Sheet */}
-                  <div style={{
-                    position: 'fixed',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    zIndex: 201,
-                    background: '#252535',
-                    borderRadius: '20px 20px 0 0',
-                    boxShadow: '0 -12px 48px rgba(0,0,0,0.75)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    animation: isClosingAssignPicker ? 'sheetDownOut 0.2s ease-in forwards' : 'sheetUpIn 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
-                  }}>
-                    {/* Drag handle */}
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0 0.25rem' }}>
-                      <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
-                    </div>
-
-                    {/* Header */}
-                    <div style={{ padding: '0.5rem 1.25rem 0.75rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                      <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#f1f1f8' }}>Assign to</h3>
-                    </div>
-
-                    {/* Options list */}
-                    <div style={{ padding: '0.5rem', overflowY: 'auto', maxHeight: '45vh' }}>
-                      {/* Unassigned */}
                       <button
                         type="button"
-                        onClick={() => setPendingAssigned('')}
+                        onClick={() => setShowFrequencyPicker(true)}
                         style={{
-                          width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                          padding: '0.75rem 0.625rem',
-                          background: pendingAssigned === '' ? 'rgba(188,155,243,0.15)' : 'transparent',
-                          border: 'none', borderRadius: '10px',
-                          color: pendingAssigned === '' ? '#BC9BF3' : '#8b8ba8',
-                          cursor: 'pointer', fontSize: '0.95rem',
-                          fontWeight: pendingAssigned === '' ? '600' : '400',
-                          textAlign: 'left', transition: 'background 0.12s',
+                          width: '100%', background: 'rgba(255,255,255,0.06)',
+                          border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: '10px',
+                          color: '#f1f1f8', fontSize: '0.9rem', padding: '0.6rem 0.75rem',
+                          textAlign: 'left', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          boxSizing: 'border-box',
                         }}
                       >
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: '#8b8ba8', flexShrink: 0 }}>
-                          —
-                        </div>
-                        <span>Unassigned</span>
-                        {pendingAssigned === '' && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem' }}>✓</span>}
+                        <span style={{ flex: 1, fontWeight: '500' }}>{selected.label}</span>
+                        <span style={{ color: '#6b6b88', fontSize: '0.7rem' }}>▾</span>
                       </button>
 
-                      <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.625rem' }} />
-
-                      {household?.members.map((m, i) => {
-                        const isActive = pendingAssigned === m.user_id;
-                        return (
-                          <button
-                            key={m.user_id}
-                            type="button"
-                            onClick={() => setPendingAssigned(m.user_id)}
+                      {showFrequencyPicker && (
+                        <>
+                          <div
+                            onClick={closeFrequencyPicker}
                             style={{
-                              width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                              padding: '0.75rem 0.625rem',
-                              background: isActive ? 'rgba(188,155,243,0.15)' : 'transparent',
-                              border: 'none', borderRadius: '10px',
-                              color: isActive ? '#BC9BF3' : '#f1f1f8',
-                              cursor: 'pointer', fontSize: '0.95rem',
-                              fontWeight: isActive ? '600' : '400',
-                              textAlign: 'left', transition: 'background 0.12s',
+                              position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.6)',
+                              animation: isClosingFrequencyPicker ? 'backdropFadeOut 0.18s ease-in forwards' : 'backdropFade 0.15s ease',
                             }}
-                          >
-                            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getAvatarGradient(i), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
-                              {getInitials(m.display_name)}
+                          />
+                          <div style={{
+                            position: 'fixed', top: '50%', left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 301, background: '#252535', borderRadius: '20px',
+                            width: 'min(340px, calc(100vw - 2rem))',
+                            boxShadow: '0 24px 64px rgba(0,0,0,0.75)', overflow: 'hidden',
+                            animation: isClosingFrequencyPicker ? 'popOut 0.18s ease-in forwards' : 'popIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          }}>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 1rem 0.875rem' }}>
+                              <span style={{ fontWeight: '700', fontSize: '1rem', color: '#f1f1f8' }}>Frequency</span>
+                              <button type="button" onClick={closeFrequencyPicker} style={{ position: 'absolute', right: '1rem', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#9b9bb8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
                             </div>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
-                            </span>
-                            {isActive && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
+                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                              {FREQ_OPTIONS.map(({ value, label, desc }) => {
+                                const isSel = newFrequency === value;
+                                return (
+                                  <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => { setNewFrequency(value); closeFrequencyPicker(); }}
+                                    style={{
+                                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                      gap: '0.75rem', padding: '0.8rem 1.125rem',
+                                      background: isSel ? 'rgba(141,182,84,0.12)' : 'transparent',
+                                      border: 'none', borderBottom: '1px solid rgba(255,255,255,0.07)',
+                                      color: isSel ? '#8DB654' : '#f1f1f8',
+                                      cursor: 'pointer', textAlign: 'left', transition: 'background 0.12s',
+                                    }}
+                                    onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                                    onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent'; }}
+                                  >
+                                    <div>
+                                      <div style={{ fontSize: '0.9rem', fontWeight: isSel ? '600' : '500' }}>{label}</div>
+                                      <div style={{ fontSize: '0.75rem', color: isSel ? 'rgba(141,182,84,0.8)' : '#6b6b88', marginTop: '0.1rem' }}>{desc}</div>
+                                    </div>
+                                    {isSel && <span style={{ color: '#8DB654', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
 
-                    {/* Footer — Cancel + Done */}
-                    <div style={{ padding: '0.75rem 1.25rem 2rem', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: '0.75rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#9b9bb8', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Assign to
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {/* Unassigned chip */}
+                  <button
+                    type="button"
+                    onClick={() => setNewAssigned('')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.375rem',
+                      background: newAssigned === '' ? 'rgba(188,155,243,0.18)' : 'rgba(255,255,255,0.06)',
+                      border: newAssigned === '' ? '1.5px solid rgba(188,155,243,0.45)' : '1.5px solid rgba(255,255,255,0.12)',
+                      borderRadius: '100px',
+                      color: newAssigned === '' ? '#BC9BF3' : '#9b9bb8',
+                      cursor: 'pointer', fontSize: '0.82rem',
+                      fontWeight: newAssigned === '' ? '600' : '500',
+                      padding: '0.25rem 0.65rem 0.25rem 0.3rem',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', color: '#8b8ba8', flexShrink: 0 }}>—</div>
+                    Anyone
+                  </button>
+
+                  {/* Member chips */}
+                  {household?.members.map((m, i) => {
+                    const isSel = newAssigned === m.user_id;
+                    return (
                       <button
+                        key={m.user_id}
                         type="button"
-                        onClick={closeAssignPicker}
-                        style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#8b8ba8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
+                        onClick={() => setNewAssigned(m.user_id)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.375rem',
+                          background: isSel ? 'rgba(188,155,243,0.18)' : 'rgba(255,255,255,0.06)',
+                          border: isSel ? '1.5px solid rgba(188,155,243,0.45)' : '1.5px solid rgba(255,255,255,0.12)',
+                          borderRadius: '100px',
+                          color: isSel ? '#BC9BF3' : '#9b9bb8',
+                          cursor: 'pointer', fontSize: '0.82rem',
+                          fontWeight: isSel ? '600' : '500',
+                          padding: '0.25rem 0.65rem 0.25rem 0.3rem',
+                          transition: 'all 0.15s',
+                        }}
                       >
-                        Cancel
+                        <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: getAvatarGradient(i), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
+                          {getInitials(m.display_name)}
+                        </div>
+                        {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => { setNewAssigned(pendingAssigned); closeAssignPicker(); }}
-                        style={{ flex: 1, padding: '0.75rem', background: '#8DB654', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}
-                      >
-                        Done
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-            {addError && <div className="msg-error">{addError}</div>}
+              {addError && <div className="msg-error">{addError}</div>}
 
-            <button type="submit" className="btn-primary" disabled={adding}>
-              {adding ? 'Adding…' : 'Add chore'}
-            </button>
-          </form>
-        </div>
+              <button
+                type="submit"
+                disabled={adding}
+                style={{
+                  width: '100%', padding: '0.75rem',
+                  background: '#8DB654', border: 'none', borderRadius: '12px',
+                  color: 'white', fontSize: '0.95rem', fontWeight: '600',
+                  cursor: adding ? 'not-allowed' : 'pointer',
+                  opacity: adding ? 0.7 : 1,
+                  marginTop: '0.25rem',
+                }}
+              >
+                {adding ? 'Adding…' : 'Add chore'}
+              </button>
+            </form>
+          </div>
+        </>
       )}
 
       {/* ── TODAY tab ── */}

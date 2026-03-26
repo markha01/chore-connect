@@ -24,6 +24,8 @@ export default function ChoreCard({
   onEdit,
   onDelete,
 }: ChoreCardProps) {
+  const [completing, setCompleting] = useState(false);
+  const [collapsing, setCollapsing] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [closingAssign, setClosingAssign] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -76,7 +78,27 @@ export default function ChoreCard({
 
   const assignedMemberIndex = members.findIndex(m => m.user_id === chore.assigned_to);
 
+  function handleCompleteClick() {
+    if (chore.is_complete) {
+      onComplete();
+      return;
+    }
+    setCompleting(true);
+    setTimeout(() => {
+      setCollapsing(true);
+      onComplete();
+    }, 380);
+  }
+
   return (
+    <div
+      style={{
+        overflow: 'hidden',
+        ...(collapsing ? {
+          animation: 'choreCollapseHeight 0.35s cubic-bezier(0.4, 0, 0.8, 0.2) forwards',
+        } : {}),
+      }}
+    >
     <div
       className="card-sm"
       style={{
@@ -86,16 +108,19 @@ export default function ChoreCard({
         opacity: chore.is_complete ? 0.65 : 1,
         transition: 'opacity 0.2s',
         position: 'relative',
+        ...(collapsing ? {
+          animation: 'choreCollapseFade 0.28s ease-in forwards',
+        } : {}),
       }}
     >
       <button
-        onClick={onComplete}
+        onClick={handleCompleteClick}
         style={{
           width: '22px',
           height: '22px',
           borderRadius: '50%',
-          border: chore.is_complete ? 'none' : '2px solid var(--border)',
-          background: chore.is_complete ? '#8DB654' : 'transparent',
+          border: (chore.is_complete || completing) ? 'none' : '2px solid var(--border)',
+          background: (chore.is_complete || completing) ? '#8DB654' : 'transparent',
           cursor: 'pointer',
           flexShrink: 0,
           marginTop: '1px',
@@ -105,11 +130,21 @@ export default function ChoreCard({
           color: 'white',
           fontSize: '0.65rem',
           fontWeight: '700',
-          transition: 'all 0.2s',
+          transition: 'border 0.1s, background 0.1s',
+          ...(completing && !chore.is_complete ? {
+            animation: 'checkCircleFill 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+          } : {}),
         }}
         title={chore.is_complete ? 'Mark as not done' : 'Mark as done'}
       >
-        {chore.is_complete ? '✓' : ''}
+        {(chore.is_complete || completing) ? (
+          <span style={{
+            display: 'inline-block',
+            ...(completing && !chore.is_complete ? {
+              animation: 'checkmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+            } : {}),
+          }}>✓</span>
+        ) : null}
       </button>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -379,7 +414,7 @@ export default function ChoreCard({
         </div>
       </div>
 
-      {/* Edit modal */}
+    {/* Edit modal */}
       {showEdit && (
         <>
           <div
@@ -568,6 +603,7 @@ export default function ChoreCard({
           </div>
         </>
       )}
+    </div>
     </div>
   );
 }

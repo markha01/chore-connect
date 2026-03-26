@@ -214,11 +214,8 @@ export default function NewChorePage() {
   const [dueDate, setDueDate] = useState(getTodayStr);
   const [frequency, setFrequency] = useState<Frequency>('once');
   const [assigned, setAssigned] = useState<number | ''>('');
-  const [pendingAssigned, setPendingAssigned] = useState<number | ''>('');
 
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showAssignPicker, setShowAssignPicker] = useState(false);
-  const [isClosingAssignPicker, setIsClosingAssignPicker] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -242,11 +239,6 @@ export default function NewChorePage() {
   function handleBack() {
     setIsExiting(true);
     setTimeout(() => router.back(), 200);
-  }
-
-  function closeAssignPicker() {
-    setIsClosingAssignPicker(true);
-    setTimeout(() => { setShowAssignPicker(false); setIsClosingAssignPicker(false); }, 200);
   }
 
   async function handleSave(e: FormEvent) {
@@ -504,110 +496,61 @@ export default function NewChorePage() {
         {/* Assign to */}
         <div style={FIELD_STYLE}>
           <label style={LABEL_STYLE}>Assign to</label>
-          <button
-            type="button"
-            onClick={() => { setPendingAssigned(assigned); setShowAssignPicker(true); }}
-            style={{
-              width: '100%',
-              background: 'rgba(255,255,255,0.04)',
-              border: '1.5px solid var(--border)',
-              borderRadius: '10px',
-              color: 'var(--text-primary)',
-              fontSize: '0.9rem',
-              padding: '0.625rem 0.875rem',
-              textAlign: 'left',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              transition: 'border-color 0.2s',
-            }}
-          >
-            {assigned ? (() => {
-              const idx = members.findIndex(m => m.user_id === assigned);
-              const member = members.find(m => m.user_id === assigned);
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+            {/* Unassigned chip */}
+            <button
+              type="button"
+              onClick={() => setAssigned('')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                background: assigned === '' ? 'rgba(188,155,243,0.18)' : 'rgba(255,255,255,0.06)',
+                border: assigned === '' ? '1.5px solid rgba(188,155,243,0.45)' : '1.5px solid var(--border)',
+                borderRadius: '100px',
+                color: assigned === '' ? '#BC9BF3' : 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                fontWeight: assigned === '' ? '600' : '500',
+                padding: '0.25rem 0.65rem 0.25rem 0.3rem',
+                transition: 'all 0.15s',
+              }}
+            >
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', color: '#8b8ba8', flexShrink: 0 }}>—</div>
+              Anyone
+            </button>
+
+            {/* Member chips */}
+            {members.map((m, i) => {
+              const isSel = assigned === m.user_id;
               return (
-                <>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: getAvatarGradient(idx >= 0 ? idx : 0), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
-                    {getInitials(member?.display_name ?? '?')}
+                <button
+                  key={m.user_id}
+                  type="button"
+                  onClick={() => setAssigned(m.user_id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    background: isSel ? 'rgba(188,155,243,0.18)' : 'rgba(255,255,255,0.06)',
+                    border: isSel ? '1.5px solid rgba(188,155,243,0.45)' : '1.5px solid var(--border)',
+                    borderRadius: '100px',
+                    color: isSel ? '#BC9BF3' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                    fontWeight: isSel ? '600' : '500',
+                    padding: '0.25rem 0.65rem 0.25rem 0.3rem',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: getAvatarGradient(i), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
+                    {getInitials(m.display_name)}
                   </div>
-                  <span style={{ fontWeight: '500' }}>
-                    {member?.display_name}{assigned === me?.userId ? ' (you)' : ''}
-                  </span>
-                </>
+                  {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
+                </button>
               );
-            })() : (
-              <span style={{ color: 'var(--text-muted)' }}>Unassigned — anyone can pick it up</span>
-            )}
-            <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.7rem' }}>▾</span>
-          </button>
-
-          {/* Assign bottom sheet */}
-          {showAssignPicker && (
-            <>
-              <div
-                onClick={closeAssignPicker}
-                style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', animation: isClosingAssignPicker ? 'backdropFadeOut 0.2s ease-in forwards' : 'backdropFade 0.15s ease' }}
-              />
-              <div style={{
-                position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 201,
-                background: '#252535', borderRadius: '20px 20px 0 0',
-                boxShadow: '0 -12px 48px rgba(0,0,0,0.75)',
-                display: 'flex', flexDirection: 'column',
-                animation: isClosingAssignPicker ? 'sheetDownOut 0.2s ease-in forwards' : 'sheetUpIn 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0 0.25rem' }}>
-                  <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
-                </div>
-                <div style={{ padding: '0.5rem 1.25rem 0.75rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#f1f1f8' }}>Assign to</h3>
-                </div>
-
-                <div style={{ padding: '0.5rem', overflowY: 'auto', maxHeight: '45vh' }}>
-                  <button
-                    type="button"
-                    onClick={() => setPendingAssigned('')}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 0.625rem', background: pendingAssigned === '' ? 'rgba(188,155,243,0.15)' : 'transparent', border: 'none', borderRadius: '10px', color: pendingAssigned === '' ? '#BC9BF3' : '#8b8ba8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: pendingAssigned === '' ? '600' : '400', textAlign: 'left', transition: 'background 0.12s' }}
-                  >
-                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1.5px dashed rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: '#8b8ba8', flexShrink: 0 }}>—</div>
-                    <span>Unassigned</span>
-                    {pendingAssigned === '' && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem' }}>✓</span>}
-                  </button>
-
-                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '0.25rem 0.625rem' }} />
-
-                  {members.map((m, i) => {
-                    const isActive = pendingAssigned === m.user_id;
-                    return (
-                      <button
-                        key={m.user_id}
-                        type="button"
-                        onClick={() => setPendingAssigned(m.user_id)}
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 0.625rem', background: isActive ? 'rgba(188,155,243,0.15)' : 'transparent', border: 'none', borderRadius: '10px', color: isActive ? '#BC9BF3' : '#f1f1f8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: isActive ? '600' : '400', textAlign: 'left', transition: 'background 0.12s' }}
-                      >
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getAvatarGradient(i), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'white', flexShrink: 0 }}>
-                          {getInitials(m.display_name)}
-                        </div>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {m.display_name}{m.user_id === me?.userId ? ' (you)' : ''}
-                        </span>
-                        {isActive && <span style={{ marginLeft: 'auto', color: '#BC9BF3', fontSize: '1rem', flexShrink: 0 }}>✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div style={{ padding: '0.75rem 1.25rem 2rem', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: '0.75rem' }}>
-                  <button type="button" onClick={closeAssignPicker} style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#8b8ba8', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>
-                    Cancel
-                  </button>
-                  <button type="button" onClick={() => { setAssigned(pendingAssigned); closeAssignPicker(); }} style={{ flex: 1, padding: '0.75rem', background: '#8DB654', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>
-                    Done
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+            })}
+          </div>
         </div>
 
         {error && (
