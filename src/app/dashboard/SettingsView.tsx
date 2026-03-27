@@ -2,13 +2,13 @@
 
 import { useState, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Home } from 'lucide-react';
+import { Home, User } from 'lucide-react';
 import { Me, Household } from './types';
 import { getInitials, getAvatarGradient } from './helpers';
 
 const NAV_H = 64;
-const CROP_FRAME = 280;   // px – size of the square crop viewport
-const CROP_RADIUS = 120;  // px – radius of the circular crop region
+const CROP_FRAME = 280;
+const CROP_RADIUS = 120;
 
 interface SettingsViewProps {
   me: Me | null;
@@ -20,11 +20,28 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
   const router = useRouter();
 
   const [copiedInvite, setCopiedInvite] = useState(false);
+
+  // Sign out
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
+
+  // Display name editing
   const [editingDisplayName, setEditingDisplayName] = useState(false);
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [savingDisplayName, setSavingDisplayName] = useState(false);
+
+  // Avatar
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Change password
+  const [editingPassword, setEditingPassword] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState('');
+
+  // Household
   const [editingHouseholdName, setEditingHouseholdName] = useState(false);
   const [householdNameInput, setHouseholdNameInput] = useState('');
   const [savingHouseholdName, setSavingHouseholdName] = useState(false);
@@ -32,7 +49,11 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
   const [showMoveOutConfirm, setShowMoveOutConfirm] = useState(false);
   const [leavingHousehold, setLeavingHousehold] = useState(false);
   const [moveOutError, setMoveOutError] = useState('');
-  const [signOutError, setSignOutError] = useState('');
+
+  // Delete account
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   // Crop modal state
   const [cropSrc, setCropSrc] = useState<string | null>(null);
@@ -42,13 +63,13 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
   const [cropImgDims, setCropImgDims] = useState({ w: 0, h: 0 });
   const cropImgRef = useRef<HTMLImageElement | null>(null);
   const cropDragRef = useRef<{ startX: number; startY: number; startOffX: number; startOffY: number } | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const myColorIndex = (household?.members.findIndex(m => m.user_id === (me?.userId ?? -1)) ?? 0);
 
-  function copyInviteLink() {
+  function copyInviteCode() {
     if (!household) return;
-    const link = `${window.location.origin}/household/join?code=${household.inviteCode}`;
-    navigator.clipboard.writeText(link).then(() => {
+    navigator.clipboard.writeText(household.inviteCode).then(() => {
       setCopiedInvite(true);
       setTimeout(() => setCopiedInvite(false), 2500);
     });
@@ -124,12 +145,10 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clip to circle
     ctx.beginPath();
     ctx.arc(OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, 0, Math.PI * 2);
     ctx.clip();
 
-    // Map the visible crop circle back to natural image coordinates
     const srcRadius = CROP_RADIUS / cropZoom;
     const srcCX = img.naturalWidth / 2 - cropOffset.x / cropZoom;
     const srcCY = img.naturalHeight / 2 - cropOffset.y / cropZoom;
@@ -194,6 +213,41 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
     } catch { /* silent */ } finally { setSavingDisplayName(false); }
   }
 
+  async function handleChangePassword(e: FormEvent) {
+    e.preventDefault();
+    if (changingPassword) return;
+    if (newPasswordInput !== confirmPasswordInput) {
+      setChangePasswordError('New passwords do not match.');
+      return;
+    }
+    if (newPasswordInput.length < 6) {
+      setChangePasswordError('New password must be at least 6 characters.');
+      return;
+    }
+    setChangingPassword(true);
+    setChangePasswordError('');
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: currentPasswordInput, newPassword: newPasswordInput }),
+      });
+      if (res.ok) {
+        setEditingPassword(false);
+        setCurrentPasswordInput('');
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+      } else {
+        const data = await res.json();
+        setChangePasswordError(data.error ?? 'Something went wrong.');
+      }
+    } catch {
+      setChangePasswordError('Something went wrong.');
+    } finally {
+      setChangingPassword(false);
+    }
+  }
+
   async function handleSaveHouseholdName(e: FormEvent) {
     e.preventDefault();
     const name = householdNameInput.trim();
@@ -246,84 +300,195 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
     }
   }
 
+  async function handleDeleteAccount() {
+    if (deletingAccount) return;
+    setDeletingAccount(true);
+    setDeleteAccountError('');
+    try {
+      const res = await fetch('/api/auth/me', { method: 'DELETE' });
+      if (res.ok) {
+        router.push('/');
+        router.refresh();
+      } else {
+        const data = await res.json();
+        setDeleteAccountError(data.error ?? 'Something went wrong.');
+        setDeletingAccount(false);
+      }
+    } catch {
+      setDeleteAccountError('Something went wrong.');
+      setDeletingAccount(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: '700px', margin: '0 auto', padding: `1.5rem 1.25rem calc(${NAV_H}px + 1.5rem)`, animation: 'viewFadeIn 0.22s ease' }}>
 
-      {/* ── Profile card ── */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+      {/* Hidden file input */}
+      <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
 
-          {/* Avatar + change/remove controls */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-            <label style={{ position: 'relative', cursor: 'pointer', flexShrink: 0, display: 'block' }}>
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+      {/* ── My Profile card ── */}
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <User size={16} strokeWidth={2} style={{ flexShrink: 0 }} /> My Profile
+        </h2>
+
+        {/* Profile picture row */}
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          <button
+            type="button"
+            onClick={() => avatarInputRef.current?.click()}
+            disabled={uploadingAvatar}
+            style={{ width: '100%', background: 'none', border: 'none', cursor: uploadingAvatar ? 'default' : 'pointer', padding: '0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem', borderRadius: 8, transition: 'background 0.15s', textAlign: 'left' }}
+            onMouseEnter={e => { if (!uploadingAvatar) e.currentTarget.style.background = 'rgba(0,0,0,0.03)'; }}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <div style={{ flexShrink: 0, width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {me?.avatarUrl ? (
-                <img src={me.avatarUrl} alt="Profile" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={me.avatarUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               ) : (
-                <div className="avatar" style={{ width: 72, height: 72, background: getAvatarGradient(myColorIndex >= 0 ? myColorIndex : 0), fontSize: '1.35rem', color: 'white' }}>
+                <div className="avatar" style={{ width: 44, height: 44, background: getAvatarGradient(myColorIndex >= 0 ? myColorIndex : 0), fontSize: '0.88rem', color: 'white' }}>
                   {getInitials(me?.displayName ?? '?')}
                 </div>
               )}
-              <div
-                style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(0,0,0,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: uploadingAvatar ? 1 : 0, transition: 'opacity 0.15s' }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                onMouseLeave={e => { if (!uploadingAvatar) e.currentTarget.style.opacity = '0'; }}
-              >
-                {uploadingAvatar ? (
-                  <div style={{ width: 20, height: 20, border: '2.5px solid rgba(255,255,255,0.8)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
-                ) : (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-                    <circle cx="12" cy="13" r="4"/>
-                  </svg>
-                )}
+              {uploadingAvatar && (
+                <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.8)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                </div>
+              )}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.2rem' }}>Profile picture</div>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                {uploadingAvatar ? 'Uploading…' : 'Change photo'}
               </div>
-            </label>
-
-            {/* Remove photo button — only shown when user has a custom photo */}
-            {me?.avatarUrl && !uploadingAvatar && (
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          {me?.avatarUrl && !uploadingAvatar && (
+            <div style={{ paddingBottom: '0.5rem' }}>
               <button
                 onClick={handleResetAvatar}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.1rem 0.4rem', borderRadius: 6, transition: 'color 0.15s' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.1rem 0', borderRadius: 6, transition: 'color 0.15s' }}
                 onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
                 onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
               >
                 Remove photo
               </button>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
 
+        {/* Name row */}
+        <div style={{ borderTop: '1px solid var(--border)' }}>
           {editingDisplayName ? (
-            <form onSubmit={handleSaveDisplayName} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', width: '100%', maxWidth: 260 }}>
-              <input className="input-dark" value={displayNameInput} onChange={e => setDisplayNameInput(e.target.value)} maxLength={40} autoFocus style={{ textAlign: 'center', fontWeight: 600 }} />
+            <form onSubmit={handleSaveDisplayName} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', padding: '0.75rem 0' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.35rem' }}>Name</div>
+                <input className="input-dark" value={displayNameInput} onChange={e => setDisplayNameInput(e.target.value)} maxLength={40} autoFocus />
+              </div>
+              <button type="submit" disabled={savingDisplayName || !displayNameInput.trim()} style={{ background: '#8DB654', border: 'none', borderRadius: 8, color: 'white', fontWeight: 600, fontSize: '0.85rem', padding: '0.625rem 0.875rem', cursor: 'pointer', opacity: savingDisplayName || !displayNameInput.trim() ? 0.5 : 1, whiteSpace: 'nowrap', transition: 'opacity 0.15s' }}>
+                {savingDisplayName ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" onClick={() => setEditingDisplayName(false)} style={{ background: 'transparent', border: '1.5px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.85rem', padding: '0.625rem 0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>Cancel</button>
+            </form>
+          ) : (
+            <button
+              onClick={() => { setDisplayNameInput(me?.displayName ?? ''); setEditingDisplayName(true); }}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '0.75rem 0', display: 'flex', alignItems: 'center', borderRadius: 8, transition: 'background 0.15s', textAlign: 'left' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.03)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.2rem' }}>Name</div>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{me?.displayName}</div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
+        </div>
+
+        {/* Change password row */}
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          {editingPassword ? (
+            <form onSubmit={handleChangePassword} style={{ padding: '0.75rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Change password</div>
+              <input
+                className="input-dark"
+                type="password"
+                placeholder="Current password"
+                value={currentPasswordInput}
+                onChange={e => setCurrentPasswordInput(e.target.value)}
+                autoFocus
+                autoComplete="current-password"
+              />
+              <input
+                className="input-dark"
+                type="password"
+                placeholder="New password"
+                value={newPasswordInput}
+                onChange={e => setNewPasswordInput(e.target.value)}
+                autoComplete="new-password"
+              />
+              <input
+                className="input-dark"
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPasswordInput}
+                onChange={e => setConfirmPasswordInput(e.target.value)}
+                autoComplete="new-password"
+              />
+              {changePasswordError && (
+                <div className="msg-error" style={{ fontSize: '0.82rem' }}>{changePasswordError}</div>
+              )}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button type="submit" disabled={savingDisplayName || !displayNameInput.trim()} style={{ background: '#8DB654', border: 'none', borderRadius: 8, color: 'white', fontWeight: 600, fontSize: '0.85rem', padding: '0.4rem 0.9rem', cursor: 'pointer', opacity: savingDisplayName || !displayNameInput.trim() ? 0.5 : 1, transition: 'opacity 0.15s' }}>
-                  {savingDisplayName ? 'Saving…' : 'Save'}
+                <button
+                  type="submit"
+                  disabled={changingPassword || !currentPasswordInput || !newPasswordInput || !confirmPasswordInput}
+                  style={{ background: '#8DB654', border: 'none', borderRadius: 8, color: 'white', fontWeight: 600, fontSize: '0.85rem', padding: '0.55rem 1rem', cursor: 'pointer', opacity: changingPassword || !currentPasswordInput || !newPasswordInput || !confirmPasswordInput ? 0.5 : 1, transition: 'opacity 0.15s' }}
+                >
+                  {changingPassword ? 'Saving…' : 'Save'}
                 </button>
-                <button type="button" onClick={() => setEditingDisplayName(false)} style={{ background: 'transparent', border: '1.5px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.85rem', padding: '0.4rem 0.75rem', cursor: 'pointer' }}>
+                <button
+                  type="button"
+                  onClick={() => { setEditingPassword(false); setCurrentPasswordInput(''); setNewPasswordInput(''); setConfirmPasswordInput(''); setChangePasswordError(''); }}
+                  style={{ background: 'transparent', border: '1.5px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.85rem', padding: '0.55rem 0.75rem', cursor: 'pointer' }}
+                >
                   Cancel
                 </button>
               </div>
             </form>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
-              <button
-                onClick={() => { setDisplayNameInput(me?.displayName ?? ''); setEditingDisplayName(true); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.5rem', borderRadius: 8, transition: 'background 0.15s' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              >
-                <span style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{me?.displayName}</span>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-              </button>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>@{me?.username}</div>
-              {me?.household?.role === 'owner' && (
-                <span className="badge" style={{ background: 'rgba(188,155,243,0.1)', color: '#7c3aed', border: '1px solid rgba(188,155,243,0.25)', marginTop: '0.25rem', display: 'inline-block' }}>Owner</span>
-              )}
-            </div>
+            <button
+              onClick={() => setEditingPassword(true)}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '0.75rem 0', display: 'flex', alignItems: 'center', borderRadius: 8, transition: 'background 0.15s', textAlign: 'left' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.03)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.2rem' }}>Password</div>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', letterSpacing: '0.12em' }}>••••••••</div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
           )}
+        </div>
+
+        {/* Sign out row */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.125rem' }}>
+          {signOutError && <div className="msg-error" style={{ marginBottom: '0.5rem', fontSize: '0.82rem' }}>{signOutError}</div>}
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '0.4rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444', borderRadius: 8, transition: 'background 0.15s', fontWeight: 600, fontSize: '0.9rem', opacity: signingOut ? 0.6 : 1 }}
+            onMouseEnter={e => { if (!signingOut) e.currentTarget.style.background = 'rgba(239,68,68,0.06)'; }}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </button>
         </div>
       </div>
 
@@ -333,16 +498,22 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
           <Home size={16} strokeWidth={2} style={{ flexShrink: 0 }} /> {household?.name}
         </h2>
 
-        <button
-          onClick={copyInviteLink}
-          style={{ width: '100%', marginBottom: '1rem', background: copiedInvite ? 'rgba(20,184,166,0.1)' : 'rgba(188,155,243,0.08)', border: copiedInvite ? '1.5px solid rgba(20,184,166,0.35)' : '1.5px solid rgba(188,155,243,0.3)', borderRadius: 12, color: copiedInvite ? '#0d7d72' : '#7c3aed', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600, padding: '0.65rem 1rem', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-        >
-          {copiedInvite ? (
-            <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Invite link copied!</>
-          ) : (
-            <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>Copy invite link</>
-          )}
-        </button>
+        {/* Invite code section */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: '0.5rem' }}>Invite code</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontFamily: 'monospace', fontSize: '1.5rem', fontWeight: 700, color: '#8DB654', letterSpacing: '0.1em' }}>
+              {household?.inviteCode?.split('').join(' ')}
+            </span>
+            <button
+              onClick={copyInviteCode}
+              style={{ flexShrink: 0, background: copiedInvite ? 'rgba(141,182,84,0.15)' : 'rgba(188,155,243,0.15)', border: 'none', borderRadius: 100, color: copiedInvite ? '#8DB654' : '#BC9BF3', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, padding: '0.35rem 0.85rem', transition: 'all 0.2s', whiteSpace: 'nowrap' }}
+            >
+              {copiedInvite ? '✓ Copied!' : 'Copy code'}
+            </button>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>Share this with housemates so they can join</div>
+        </div>
 
         {/* Name row */}
         <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -435,17 +606,39 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
         </div>
       </div>
 
-      {/* Sign out */}
-      {signOutError && <div className="msg-error" style={{ marginBottom: '0.5rem', fontSize: '0.82rem' }}>{signOutError}</div>}
-      <button
-        onClick={handleSignOut}
-        disabled={signingOut}
-        style={{ width: '100%', padding: '0.75rem', background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '12px', color: '#ef4444', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem', transition: 'background 0.2s' }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.14)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')}
-      >
-        {signingOut ? 'Signing out…' : 'Sign out'}
-      </button>
+      {/* ── Delete Account ── */}
+      {deleteAccountError && <div className="msg-error" style={{ marginBottom: '0.5rem', fontSize: '0.82rem' }}>{deleteAccountError}</div>}
+      {showDeleteConfirm ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <p style={{ fontSize: '0.85rem', color: '#ef4444', fontWeight: 500, margin: 0, textAlign: 'center' }}>
+            Are you sure? <strong>This will permanently delete your account</strong> and cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deletingAccount}
+              style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 10, color: '#ef4444', fontWeight: 600, fontSize: '0.88rem', padding: '0.6rem', cursor: deletingAccount ? 'default' : 'pointer', opacity: deletingAccount ? 0.6 : 1, transition: 'opacity 0.15s' }}
+            >
+              {deletingAccount ? 'Deleting…' : 'Yes, delete my account'}
+            </button>
+            <button
+              onClick={() => { setShowDeleteConfirm(false); setDeleteAccountError(''); }}
+              style={{ flex: 1, background: 'transparent', border: '1.5px solid var(--border)', borderRadius: 10, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.88rem', padding: '0.6rem', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => { setShowDeleteConfirm(true); setDeleteAccountError(''); }}
+          style={{ width: '100%', padding: '0.75rem', background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '12px', color: '#ef4444', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem', transition: 'background 0.2s' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.14)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')}
+        >
+          Delete Account
+        </button>
+      )}
 
       {/* Members modal */}
       {showMembersModal && (
@@ -508,7 +701,6 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
               onPointerLeave={handleCropPointerUp}
               onWheel={handleCropWheel}
             >
-              {/* Actual image */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 ref={cropImgRef}
@@ -526,10 +718,7 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
                   maxWidth: 'none',
                 }}
               />
-
-              {/* Dark overlay outside circle (box-shadow trick) */}
               <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: CROP_RADIUS * 2, height: CROP_RADIUS * 2, borderRadius: '50%', boxShadow: `0 0 0 ${CROP_FRAME}px rgba(0,0,0,0.6)`, pointerEvents: 'none', zIndex: 2 }} />
-              {/* Circle border */}
               <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: CROP_RADIUS * 2, height: CROP_RADIUS * 2, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.65)', pointerEvents: 'none', zIndex: 3 }} />
             </div>
 
@@ -552,7 +741,6 @@ export default function SettingsView({ me, household, fetchAll }: SettingsViewPr
               Drag to reposition · Scroll to zoom
             </p>
 
-            {/* Action buttons */}
             <div style={{ display: 'flex', gap: '0.625rem', width: '100%' }}>
               <button onClick={closeCropModal} style={{ flex: 1, background: 'transparent', border: '1.5px solid var(--border)', borderRadius: 10, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.88rem', padding: '0.65rem', cursor: 'pointer' }}>Cancel</button>
               <button onClick={applyCrop} style={{ flex: 2, background: '#8DB654', border: 'none', borderRadius: 10, color: 'white', fontWeight: 600, fontSize: '0.88rem', padding: '0.65rem', cursor: 'pointer' }}>Apply</button>

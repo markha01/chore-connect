@@ -297,8 +297,8 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
           onClick={openAddForm}
           style={{
             position: 'fixed',
-            bottom: `${NAV_H + 20}px`,
-            right: '20px',
+            bottom: `${NAV_H + 16}px`,
+            right: 'max(16px, calc((100vw - 700px) / 2 - 96px))',
             width: '56px',
             height: '56px',
             borderRadius: '50%',

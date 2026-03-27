@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSession, createSession } from '@/lib/auth';
+import { getSession, createSession, clearSession } from '@/lib/auth';
 import { query, queryOne } from '@/lib/db';
 
 interface HouseholdRow {
@@ -122,6 +122,56 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('[me PUT]', err);
+    return NextResponse.json({ error: 'Something went wrong.' }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+    }
+
+    const household = await queryOne<{ id: number; owner_id: number; member_count: string }>(
+      `SELECT h.id, h.owner_id, COUNT(hm2.user_id)::text AS member_count
+       FROM households h
+       JOIN household_members hm ON hm.household_id = h.id
+       JOIN household_members hm2 ON hm2.household_id = h.id
+       WHERE hm.user_id = $1
+       GROUP BY h.id, h.owner_id`,
+      [session.userId]
+    );
+
+    if (household) {
+      const memberCount = parseInt(household.member_count, 10);
+      if (household.owner_id === session.userId && memberCount > 1) {
+        return NextResponse.json(
+          { error: 'You are the owner of a household with other members. Please remove them or leave before deleting your account.' },
+          { status: 400 }
+        );
+      }
+
+      if (household.owner_id === session.userId) {
+        // Solo owner — delete household and all its data
+        await query(`DELETE FROM household_members WHERE household_id = $1`, [household.id]);
+        await query(`DELETE FROM chores WHERE household_id = $1`, [household.id]);
+        await query(`DELETE FROM messages WHERE household_id = $1`, [household.id]);
+        await query(`DELETE FROM households WHERE id = $1`, [household.id]);
+      } else {
+        await query(
+          `DELETE FROM household_members WHERE household_id = $1 AND user_id = $2`,
+          [household.id, session.userId]
+        );
+      }
+    }
+
+    await query(`DELETE FROM users WHERE id = $1`, [session.userId]);
+    clearSession();
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('[me DELETE]', err);
     return NextResponse.json({ error: 'Something went wrong.' }, { status: 500 });
   }
 }
