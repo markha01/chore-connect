@@ -77,7 +77,7 @@ export default function LoginPage() {
               marginBottom: '0.375rem',
             }}
           >
-            ChoreShare
+            ChoreConnect
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Fair chores for everyone you live with
