@@ -6,6 +6,7 @@ import { Me, Household, Chore } from './types';
 import ChoresView from './ChoresView';
 import BulletinView from './BulletinView';
 import SettingsView from './SettingsView';
+import StatsView from './StatsView';
 
 const NAV_H = 64;
 const HEADER_H = 48;
@@ -42,6 +43,17 @@ function IconSettings({ active }: { active: boolean }) {
   );
 }
 
+function IconStats({ active }: { active: boolean }) {
+  const color = active ? '#BC9BF3' : '#8b8ba8';
+  return (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="12" width="4" height="8" rx="1" />
+      <rect x="10" y="7" width="4" height="13" rx="1" />
+      <rect x="17" y="3" width="4" height="17" rx="1" />
+    </svg>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -55,7 +67,7 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
 
   // Navigation
-  const [activeView, setActiveView] = useState<'chores' | 'bulletin' | 'settings'>('chores');
+  const [activeView, setActiveView] = useState<'chores' | 'bulletin' | 'stats' | 'settings'>('chores');
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -145,7 +157,7 @@ export default function DashboardPage() {
         }}
       >
         <span key={activeView} style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)', animation: 'headerTitleIn 0.2s ease', flex: 1, textAlign: 'center' }}>
-          {{ chores: 'Chores', bulletin: 'Messages', settings: 'Settings' }[activeView]}
+          {{ chores: 'Chores', bulletin: 'Messages', stats: 'Statistics', settings: 'Settings' }[activeView]}
         </span>
       </header>
 
@@ -156,6 +168,10 @@ export default function DashboardPage() {
 
       {activeView === 'bulletin' && (
         <BulletinView me={me} household={household} isActive={activeView === 'bulletin'} />
+      )}
+
+      {activeView === 'stats' && (
+        <StatsView me={me} household={household} chores={chores} />
       )}
 
       {activeView === 'settings' && (
@@ -182,6 +198,7 @@ export default function DashboardPage() {
           [
             { key: 'chores', label: 'Chores', Icon: IconChores },
             { key: 'bulletin', label: 'Messages', Icon: IconBoard },
+            { key: 'stats', label: 'Stats', Icon: IconStats },
             { key: 'settings', label: 'Settings', Icon: IconSettings },
           ] as const
         ).map(({ key, label, Icon }) => {
