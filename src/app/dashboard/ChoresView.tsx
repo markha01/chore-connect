@@ -58,8 +58,10 @@ export default function ChoresView({ me, household, chores, fetchAll }: ChoresVi
   const upcomingChores = chores.filter(c => c.due_date && c.due_date > todayStr && !c.is_complete);
   const pendingTodayChores = todayChores.filter(c => !c.is_complete);
   const doneTodayChores = todayChores.filter(c => c.is_complete);
-  const totalToday = todayChores.length;
-  const completedToday = doneTodayChores.length;
+  // Progress: only count chores due exactly today, not overdue chores from past days
+  const todayProgressChores = chores.filter(c => c.due_date === todayStr || !c.due_date);
+  const totalToday = todayProgressChores.length;
+  const completedToday = todayProgressChores.filter(c => c.is_complete).length;
   const progressPct = totalToday === 0 ? 0 : Math.round((completedToday / totalToday) * 100);
 
   const upcomingGroups: { dateStr: string; chores: Chore[] }[] = (() => {
